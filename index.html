@@ -27,7 +27,22 @@
       font-size: 24px;
       font-weight: bold;
       color: #fff;
+      margin-bottom: 10px;
+    }
+    .restart-button {
       margin-bottom: 20px;
+      padding: 8px 20px;
+      font-size: 16px;
+      font-weight: bold;
+      border-radius: 8px;
+      border: none;
+      background-color: #fff;
+      color: #3b5d3c;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .restart-button:hover {
+      background-color: #d8d8d8;
     }
     .peak-row {
       display: flex;
@@ -38,7 +53,7 @@
     .peak {
       position: relative;
       width: 100px;
-      height: 360px;
+      height: 420px;
     }
     .card-row {
       display: flex;
@@ -125,6 +140,7 @@
 <body>
   <div class="game-container">
     <div class="score-display" id="scoreDisplay">Score: 0</div>
+    <button class="restart-button" id="restartButton">Restart</button>
     <div class="peak-row" id="peakRow"></div>
     <div class="deck-area">
       <div class="deck" id="deck">Draw</div>
@@ -134,6 +150,9 @@
   </div>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
+      const restartButton = document.getElementById("restartButton");
+      restartButton.addEventListener("click", () => location.reload());
+
       let score = 0;
       const scoreDisplay = document.getElementById("scoreDisplay");
       function updateScore(change) {
@@ -159,24 +178,42 @@
       const stock = Array.from({ length: 24 }, () => getRandomCardValue());
       const wasteStack = [];
 
-      function drawCard(initial = false) {
-        if (!initial) refillOneRemovedSlot();
+      function drawCard() {
         if (stock.length === 0) return;
-        const newCardValue = stock.pop();
-        stockCount.textContent = stock.length;
-        const newCard = document.createElement("div");
-        newCard.classList.add("waste-card", "card", "clickable");
-        newCard.textContent = newCardValue;
-        newCard.style.zIndex = wasteStack.length;
-        newCard.addEventListener("click", () => {
-          newCard.classList.toggle("selected");
-          checkSelectedCards();
-        });
-        wasteEl.appendChild(newCard);
-        wasteStack.push(newCard);
+
+        const removedSlots = document.querySelectorAll(".card.removed");
+        if (removedSlots.length > 0 && wasteStack.length > 0) {
+          const slot = removedSlots[0];
+          const card = wasteStack.pop();
+          wasteEl.removeChild(card);
+          slot.textContent = card.textContent;
+          slot.classList.remove("removed");
+          slot.classList.add("clickable");
+          slot.style.visibility = "visible";
+          slot.addEventListener("click", () => {
+            slot.classList.toggle("selected");
+            checkSelectedCards();
+          });
+          checkUncovering();
+        } else {
+          const newCardValue = stock.pop();
+          stockCount.textContent = stock.length;
+          const newCard = document.createElement("div");
+          newCard.classList.add("waste-card", "card", "clickable");
+          newCard.textContent = newCardValue;
+          newCard.style.zIndex = wasteStack.length;
+          newCard.addEventListener("click", () => {
+            newCard.classList.toggle("selected");
+            checkSelectedCards();
+          });
+          wasteStack.push(newCard);
+          wasteEl.appendChild(newCard);
+        }
       }
 
-      function createDiamond() {
+      deckEl.addEventListener("click", () => drawCard());
+
+      function createDiamond(offsetY = 0) {
         const peak = document.createElement("div");
         peak.classList.add("peak");
         const cardHeight = 90;
@@ -185,7 +222,7 @@
         rowsPerDiamond.forEach((numCards, rowIndex) => {
           const row = document.createElement("div");
           row.classList.add("card-row");
-          row.style.top = `${rowIndex * (cardHeight - overlap)}px`;
+          row.style.top = `${(rowIndex + offsetY) * (cardHeight - overlap)}px`;
           const rowCards = [];
           for (let i = 0; i < numCards; i++) {
             const card = document.createElement("div");
@@ -197,7 +234,6 @@
           peak.appendChild(row);
           cardMatrix.push(rowCards);
         });
-
         const numRows = cardMatrix.length;
         cardMatrix.forEach((row, rowIndex) => {
           row.forEach((card, colIndex) => {
@@ -226,40 +262,14 @@
         return peak;
       }
 
-      function checkSelectedCards() {
-        const selectedCards = document.querySelectorAll(".card.clickable.selected");
-        const selectedValues = Array.from(selectedCards).map(card => getCardNumericValue(card.textContent));
-        let total = selectedValues.reduce((a, b) => a + b, 0);
-
-        if (total === 11) {
-          updateScore(10);
-          selectedCards.forEach(card => {
-            card.classList.remove("clickable", "selected");
-            card.classList.add("removed");
-            card.style.visibility = "hidden";
-          });
-          revealUncoveredCards();
-          checkWinCondition();
-        } else if (total > 11) {
-          updateScore(-5);
-          selectedCards.forEach(card => {
-            card.classList.remove("selected");
-          });
-        }
-      }
-
-      function refillOneRemovedSlot() {
-        // Optional: refill slot logic if needed
-      }
-
-      function revealUncoveredCards() {
+      function checkUncovering() {
         const coveredCards = document.querySelectorAll(".card.covered");
         coveredCards.forEach(card => {
-          const rect = card.getBoundingClientRect();
-          const centerX = rect.left + rect.width / 2;
-          const centerY = rect.top + rect.height / 2;
-          const isStillCovered = Array.from(document.elementsFromPoint(centerX, centerY)).some(el => {
-            return el !== card && el.classList.contains("card") && !el.classList.contains("removed") && el.getBoundingClientRect().top > rect.top;
+          const cardRect = card.getBoundingClientRect();
+          const cardCenterX = cardRect.left + cardRect.width / 2;
+          const cardCenterY = cardRect.top + cardRect.height / 2;
+          const isStillCovered = Array.from(document.elementsFromPoint(cardCenterX, cardCenterY)).some(el => {
+            return el !== card && el.classList.contains("card") && !el.classList.contains("removed") && el.getBoundingClientRect().top > cardRect.top;
           });
           if (!isStillCovered) {
             card.classList.remove("covered");
@@ -272,26 +282,41 @@
         });
       }
 
+      function checkSelectedCards() {
+        const selectedCards = document.querySelectorAll(".card.clickable.selected");
+        const selectedValues = Array.from(selectedCards).map(card => getCardNumericValue(card.textContent));
+        let total = selectedValues.reduce((a, b) => a + b, 0);
+        if (total === 11) {
+          selectedCards.forEach(card => {
+            card.classList.remove("clickable", "selected");
+            card.classList.add("removed");
+            card.style.visibility = "hidden";
+          });
+          updateScore(1);
+          checkUncovering();
+        } else if (total > 11) {
+          selectedCards.forEach(card => card.classList.remove("selected"));
+          updateScore(-1);
+        }
+        checkWinCondition();
+      }
+
       function checkWinCondition() {
-        const remainingPeakCards = document.querySelectorAll('.peak .card:not(.removed)');
-        if (remainingPeakCards.length === 0) {
-          updateScore(50);
-          showWinMessage();
+        const allCards = document.querySelectorAll(".card");
+        const activeCards = Array.from(allCards).filter(card => !card.classList.contains("removed"));
+        if (activeCards.length === 0) {
+          const message = document.createElement("div");
+          message.innerText = "🎉 You Win! 🎉";
+          message.classList.add("win-message");
+          document.body.appendChild(message);
         }
       }
 
-      function showWinMessage() {
-        const message = document.createElement("div");
-        message.innerText = "🎉 You Win! 🎉";
-        message.classList.add("win-message");
-        document.body.appendChild(message);
-      }
+      peakRow.appendChild(createDiamond(1));
+      peakRow.appendChild(createDiamond(0));
+      peakRow.appendChild(createDiamond(1));
 
-      for (let i = 0; i < 3; i++) {
-        peakRow.appendChild(createDiamond());
-      }
-
-      drawCard(true);
+      drawCard();
     });
   </script>
 </body>
