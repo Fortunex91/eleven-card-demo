@@ -11,8 +11,8 @@
       overflow: hidden;
       width: 100vw;
       height: 100vh;
-      background-color: #3b5d3c;
-      font-family: sans-serif;
+      background-color: #1e3a2f; /* Modern darker green */
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
     .game-container {
       display: flex;
@@ -37,12 +37,13 @@
       border-radius: 8px;
       border: none;
       background-color: #fff;
-      color: #3b5d3c;
+      color: #1e3a2f;
       cursor: pointer;
-      transition: background 0.2s;
+      transition: background 0.2s, transform 0.1s;
     }
     .restart-button:hover {
       background-color: #d8d8d8;
+      transform: scale(1.05);
     }
     .peak-row {
       display: flex;
@@ -66,27 +67,45 @@
     .card, .waste-card {
       width: 60px;
       height: 90px;
-      border-radius: 8px;
-      box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.25);
+      border-radius: 12px; /* Softer corners */
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); /* Deeper shadow */
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 20px;
       font-weight: bold;
       color: #222;
-      border: 1px solid #ccc;
-      transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
-      background: linear-gradient(145deg, #ffffff, #f2f2f2);
+      border: 1px solid #ddd;
+      transition: transform 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
+      background: linear-gradient(145deg, #ffffff, #f0f0f0); /* Smoother gradient */
     }
     .card.clickable {
       cursor: pointer;
     }
     .card.selected, .waste-card.selected {
-      transform: translateY(-6px);
-      box-shadow: 0 0 12px 4px rgba(255, 255, 0, 0.6);
+      transform: translateY(-8px) scale(1.05); /* Modern lift and scale */
+      box-shadow: 0 0 16px 6px rgba(255, 215, 0, 0.7); /* Brighter glow */
     }
     .card.covered {
-      background: linear-gradient(145deg, #d4d4d4, #e5e5e5);
+      background: linear-gradient(145deg, #d0d0d0, #e0e0e0); /* Updated covered style */
+      pointer-events: none;
+    }
+    .card.removing {
+      animation: removeCard 0.6s ease-out forwards;
+    }
+    @keyframes removeCard {
+      0% {
+        transform: scale(1) rotate(0);
+        opacity: 1;
+      }
+      50% {
+        transform: scale(1.2) rotate(5deg);
+        opacity: 0.8;
+      }
+      100% {
+        transform: scale(0) rotate(-10deg);
+        opacity: 0;
+      }
     }
     .deck-area {
       display: flex;
@@ -108,6 +127,10 @@
       background: white;
       border: 2px solid #888;
       cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .deck:hover {
+      transform: scale(1.05);
     }
     .waste {
       background: transparent;
@@ -118,22 +141,41 @@
       top: 0;
       left: 0;
     }
-    .win-message {
+    .win-message, .lose-message {
       position: fixed;
       top: 40%;
       left: 50%;
       transform: translate(-50%, -50%);
-      background: gold;
       padding: 30px 50px;
-      border-radius: 12px;
+      border-radius: 16px;
       font-size: 2rem;
-      box-shadow: 0 0 20px rgba(0,0,0,0.3);
+      box-shadow: 0 0 24px rgba(0,0,0,0.4);
       z-index: 1000;
       animation: fadeIn 0.6s ease-out;
     }
+    .win-message {
+      background: linear-gradient(145deg, #ffd700, #ffcc00); /* Modern gold gradient */
+    }
+    .lose-message {
+      background: linear-gradient(145deg, #ff0000, #cc0000); /* Modern red gradient */
+    }
     @keyframes fadeIn {
-      from { opacity: 0; transform: translate(-50%, -60%); }
-      to { opacity: 1; transform: translate(-50%, -50%); }
+      from { opacity: 0; transform: translate(-50%, -60%) scale(0.9); }
+      to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    }
+    @media (max-width: 768px) {
+      .card, .waste-card {
+        width: 50px;
+        height: 75px;
+        font-size: 16px;
+      }
+      .peak {
+        width: 80px;
+        height: 350px;
+      }
+      .peak-row {
+        width: 90%;
+      }
     }
   </style>
 </head>
@@ -144,7 +186,7 @@
     <div class="peak-row" id="peakRow"></div>
     <div class="deck-area">
       <div class="deck" id="deck">Draw</div>
-      <div id="stockCount" style="margin-top: 8px; color: white; font-weight: bold; text-align: center;">24</div>
+      <div id="stockCount" style="margin-top: 8px; color: white; font-weight: bold; text-align: center;">28</div>
       <div class="waste" id="waste"></div>
     </div>
   </div>
@@ -175,14 +217,37 @@
         return cardValues[Math.floor(Math.random() * cardValues.length)];
       }
 
-      const stock = Array.from({ length: 24 }, () => getRandomCardValue());
+      const stock = Array.from({ length: 28 }, () => getRandomCardValue());
       const wasteStack = [];
 
-      function drawCard() {
-        if (stock.length === 0) return;
+      function refillWasteIfEmpty() {
+        if (wasteStack.length === 0 && stock.length > 0) {
+          const newCardValue = stock.pop();
+          stockCount.textContent = stock.length;
+          const newCard = document.createElement("div");
+          newCard.classList.add("waste-card", "card", "clickable");
+          newCard.textContent = newCardValue;
+          newCard.style.zIndex = wasteStack.length;
+          newCard.addEventListener("click", handleCardClick);
+          wasteStack.push(newCard);
+          wasteEl.appendChild(newCard);
+        }
+      }
 
-        const removedSlots = document.querySelectorAll(".card.removed");
+      function drawCard() {
+        if (stock.length === 0) {
+          checkLoseCondition();
+          return;
+        }
+
+        let removedSlots = document.querySelectorAll(".card.removed");
         if (removedSlots.length > 0 && wasteStack.length > 0) {
+          removedSlots = Array.from(removedSlots).sort((a, b) => {
+            const aRect = a.getBoundingClientRect();
+            const bRect = b.getBoundingClientRect();
+            if (aRect.top !== bRect.top) return aRect.top - bRect.top;
+            return aRect.left - bRect.left;
+          });
           const slot = removedSlots[0];
           const card = wasteStack.pop();
           wasteEl.removeChild(card);
@@ -190,11 +255,9 @@
           slot.classList.remove("removed");
           slot.classList.add("clickable");
           slot.style.visibility = "visible";
-          slot.addEventListener("click", () => {
-            slot.classList.toggle("selected");
-            checkSelectedCards();
-          });
+          slot.addEventListener("click", handleCardClick);
           checkUncovering();
+          refillWasteIfEmpty();
         } else {
           const newCardValue = stock.pop();
           stockCount.textContent = stock.length;
@@ -202,16 +265,21 @@
           newCard.classList.add("waste-card", "card", "clickable");
           newCard.textContent = newCardValue;
           newCard.style.zIndex = wasteStack.length;
-          newCard.addEventListener("click", () => {
-            newCard.classList.toggle("selected");
-            checkSelectedCards();
-          });
+          newCard.addEventListener("click", handleCardClick);
           wasteStack.push(newCard);
           wasteEl.appendChild(newCard);
         }
       }
 
       deckEl.addEventListener("click", () => drawCard());
+
+      function handleCardClick(event) {
+        const card = event.currentTarget;
+        if (card.classList.contains("clickable") || card.classList.contains("waste-card")) {
+          card.classList.toggle("selected");
+          checkSelectedCards();
+        }
+      }
 
       function createDiamond(offsetY = 0) {
         const peak = document.createElement("div");
@@ -248,14 +316,11 @@
                 }
               }
             }
-            if (!isCovered) {
-              card.classList.add("clickable");
-              card.addEventListener("click", () => {
-                card.classList.toggle("selected");
-                checkSelectedCards();
-              });
-            } else {
+            if (isCovered) {
               card.classList.add("covered");
+            } else {
+              card.classList.add("clickable");
+              card.addEventListener("click", handleCardClick);
             }
           });
         });
@@ -267,38 +332,51 @@
         coveredCards.forEach(card => {
           const cardRect = card.getBoundingClientRect();
           const cardCenterX = cardRect.left + cardRect.width / 2;
-          const cardCenterY = cardRect.top + cardRect.height / 2;
-          const isStillCovered = Array.from(document.elementsFromPoint(cardCenterX, cardCenterY)).some(el => {
+          const cardCenterY = cardRect.bottom - 9; // Check near the bottom to detect overlap with lower cards
+          const elements = document.elementsFromPoint(cardCenterX, cardCenterY);
+          const isStillCovered = elements.some(el => {
             return el !== card && el.classList.contains("card") && !el.classList.contains("removed") && el.getBoundingClientRect().top > cardRect.top;
           });
           if (!isStillCovered) {
             card.classList.remove("covered");
             card.classList.add("clickable");
-            card.addEventListener("click", () => {
-              card.classList.toggle("selected");
-              checkSelectedCards();
-            });
+            card.addEventListener("click", handleCardClick);
           }
         });
       }
 
       function checkSelectedCards() {
-        const selectedCards = document.querySelectorAll(".card.clickable.selected");
+        const selectedCards = document.querySelectorAll(".card.clickable.selected, .waste-card.selected");
         const selectedValues = Array.from(selectedCards).map(card => getCardNumericValue(card.textContent));
         let total = selectedValues.reduce((a, b) => a + b, 0);
         if (total === 11) {
+          let wasteRemoved = false;
           selectedCards.forEach(card => {
+            if (card.classList.contains("waste-card")) {
+              wasteEl.removeChild(card);
+              const index = wasteStack.indexOf(card);
+              if (index > -1) wasteStack.splice(index, 1);
+              wasteRemoved = true;
+            }
             card.classList.remove("clickable", "selected");
-            card.classList.add("removed");
-            card.style.visibility = "hidden";
+            card.classList.add("removing");
+            card.addEventListener("animationend", () => {
+              card.classList.add("removed");
+              card.style.visibility = "hidden";
+              card.classList.remove("removing");
+              checkUncovering();
+              checkWinCondition();
+              checkLoseCondition();
+            }, { once: true });
           });
           updateScore(1);
-          checkUncovering();
+          if (wasteRemoved) {
+            refillWasteIfEmpty();
+          }
         } else if (total > 11) {
           selectedCards.forEach(card => card.classList.remove("selected"));
           updateScore(-1);
         }
-        checkWinCondition();
       }
 
       function checkWinCondition() {
@@ -308,6 +386,17 @@
           const message = document.createElement("div");
           message.innerText = "🎉 You Win! 🎉";
           message.classList.add("win-message");
+          document.body.appendChild(message);
+        }
+      }
+
+      function checkLoseCondition() {
+        const allCards = document.querySelectorAll(".card");
+        const activeCards = Array.from(allCards).filter(card => !card.classList.contains("removed"));
+        if (stock.length === 0 && activeCards.length > 0) {
+          const message = document.createElement("div");
+          message.innerText = "You Lost!";
+          message.classList.add("lose-message");
           document.body.appendChild(message);
         }
       }
