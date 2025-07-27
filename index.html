@@ -134,6 +134,13 @@
   </div>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
+      let score = 0;
+      const scoreDisplay = document.getElementById("scoreDisplay");
+      function updateScore(change) {
+        score = Math.max(0, score + change);
+        scoreDisplay.textContent = `Score: ${score}`;
+      }
+
       const peakRow = document.getElementById("peakRow");
       const deckEl = document.getElementById("deck");
       const wasteEl = document.getElementById("waste");
@@ -163,6 +170,7 @@
         newCard.style.zIndex = wasteStack.length;
         newCard.addEventListener("click", () => {
           newCard.classList.toggle("selected");
+          checkSelectedCards();
         });
         wasteEl.appendChild(newCard);
         wasteStack.push(newCard);
@@ -222,7 +230,9 @@
         const selectedCards = document.querySelectorAll(".card.clickable.selected");
         const selectedValues = Array.from(selectedCards).map(card => getCardNumericValue(card.textContent));
         let total = selectedValues.reduce((a, b) => a + b, 0);
+
         if (total === 11) {
+          updateScore(10);
           selectedCards.forEach(card => {
             card.classList.remove("clickable", "selected");
             card.classList.add("removed");
@@ -230,7 +240,16 @@
           });
           revealUncoveredCards();
           checkWinCondition();
+        } else if (total > 11) {
+          updateScore(-5);
+          selectedCards.forEach(card => {
+            card.classList.remove("selected");
+          });
         }
+      }
+
+      function refillOneRemovedSlot() {
+        // Optional: refill slot logic if needed
       }
 
       function revealUncoveredCards() {
@@ -256,6 +275,7 @@
       function checkWinCondition() {
         const remainingPeakCards = document.querySelectorAll('.peak .card:not(.removed)');
         if (remainingPeakCards.length === 0) {
+          updateScore(50);
           showWinMessage();
         }
       }
