@@ -1,12 +1,20 @@
-<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Eleven Solitaire</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Dein Script erstellt das Layout dynamisch! -->
+  <div class="game-container">
+    <div class="score-display" id="scoreDisplay">Score: 0</div>
+    <div class="peak-row" id="peakRow"></div>
+    <div class="deck-area">
+      <div class="deck" id="deck">Draw</div>
+      <div id="stockCount">24</div>
+      <div class="waste" id="waste"></div>
+    </div>
+  </div>
   <script src="elevengame.js"></script>
 </body>
 </html>
