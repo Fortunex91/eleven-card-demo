@@ -1,3 +1,6 @@
+window.addEventListener("DOMContentLoaded", () => {  //Du musst sicherstellen, dass dein Spielcode erst gestartet wird, wenn das HTML vollständig geladen ist. Das machst du mit einem Event Listener
+  // dein gesamter Spiel-Code kommt HIER hinein!
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -353,3 +356,4 @@ document.head.appendChild(style); // Füge das CSS dynamisch dem Head hinzu
   </script>
 </body>
 </html>
+});
