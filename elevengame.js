@@ -8,26 +8,38 @@ window.addEventListener("DOMContentLoaded", () => {
   const rowsPerDiamond = [1, 2, 3, 2, 1];
   const NUM_DIAMONDS = 3;
 
-  // Kartenwerte
+  // Kartenwerte / Stacks
   const cardValues = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
   const stock = Array.from({ length: 24 }, () => getRandomCardValue());
-  const wasteStack = []; // hält DOM-Elemente der Waste-Karten (oben = last)
+  const wasteStack = []; // DOM-Elemente der Waste-Karten (oben = last)
 
   function getRandomCardValue() {
     return cardValues[Math.floor(Math.random() * cardValues.length)];
   }
-
   function getCardNumericValue(cardText) {
     return cardText === "A" ? 1 : parseInt(cardText, 10);
   }
 
-  // ---------- Peak-Erzeugung mit stabilen IDs & Blocker-Mapping ----------
-  let cardIdCounter = 0;
+  // ---------- Hilfsfunktionen für IDs und Mapping ----------
   function makeCardId(d, r, c) {
-    // eindeutige, lesbare ID
     return `card-d${d}-r${r}-c${c}`;
   }
 
+  /**
+   * Liefert für einen Index in einer Row die korrespondierenden Indizes der
+   * nächsten Row (darunter). Damit bilden wir die "Kinder" eines Elternknotens.
+   * Beispiel: 1 -> 2 -> 3 -> 2 -> 1
+   */
+  function mapChildrenIndices(curLen, nextLen, idx) {
+    if (nextLen === 1) return [0];
+    if (curLen === 1) return [0, nextLen - 1]; // Spitze deckt beide darunterliegenden
+    const x = idx * (nextLen - 1) / (curLen - 1);
+    const left = Math.floor(x);
+    const right = Math.ceil(x);
+    return left === right ? [left] : [left, right];
+  }
+
+  // ---------- Peak erzeugen, data-children verdrahten ----------
   function createDiamond(diamondIndex) {
     const peak = document.createElement("div");
     peak.classList.add("peak");
@@ -35,62 +47,46 @@ window.addEventListener("DOMContentLoaded", () => {
     const cardHeight = 90;
     const overlap = cardHeight * 0.2;
 
-    // Matrix der Rows/Karten pro Peak
     const cardMatrix = [];
     rowsPerDiamond.forEach((numCards, rowIndex) => {
       const row = document.createElement("div");
       row.classList.add("card-row");
       row.style.top = `${rowIndex * (cardHeight - overlap)}px`;
-
       const rowCards = [];
+
       for (let i = 0; i < numCards; i++) {
         const card = document.createElement("div");
         card.classList.add("card", "field");
         card.textContent = getRandomCardValue();
-        // Indizes & ID setzen
+
         card.dataset.diamond = String(diamondIndex);
         card.dataset.row = String(rowIndex);
         card.dataset.col = String(i);
+
         const cid = makeCardId(diamondIndex, rowIndex, i);
         card.id = cid;
 
         row.appendChild(card);
         rowCards.push(card);
       }
+
       peak.appendChild(row);
       cardMatrix.push(rowCards);
     });
 
-    // Blocker-Beziehungen (pro Karte die Karten der VORHERIGEN Row)
-    for (let r = 1; r < cardMatrix.length; r++) {
-      const prevRow = cardMatrix[r - 1];
+    // data-children setzen: für jede Karte in Row r → Kinder in Row r+1
+    for (let r = 0; r < cardMatrix.length - 1; r++) {
       const curRow = cardMatrix[r];
-      const prevLen = prevRow.length;
+      const nextRow = cardMatrix[r + 1];
       const curLen = curRow.length;
+      const nextLen = nextRow.length;
 
       for (let c = 0; c < curLen; c++) {
-        const curCard = curRow[c];
-
-        // Mappe aktuelle Spalte c auf Index(e) in der vorherigen Row
-        let indices = [];
-        if (prevLen === 1) {
-          indices = [0];
-        } else if (curLen === 1) {
-          // selten im Diamond, aber der Vollständigkeit halber
-          indices = [0, prevLen - 1];
-        } else {
-          const x = c * (prevLen - 1) / (curLen - 1);
-          const left = Math.floor(x);
-          const right = Math.ceil(x);
-          indices = left === right ? [left] : [left, right];
-        }
-
-        const blockers = indices
-          .map(idx => prevRow[idx]?.id)
-          .filter(Boolean);
-
-        if (blockers.length > 0) {
-          curCard.dataset.blockers = blockers.join(",");
+        const parentCard = curRow[c];
+        const childIdxs = mapChildrenIndices(curLen, nextLen, c);
+        const childIds = childIdxs.map(i => nextRow[i]?.id).filter(Boolean);
+        if (childIds.length) {
+          parentCard.dataset.children = childIds.join(",");
         }
       }
     }
@@ -98,27 +94,32 @@ window.addEventListener("DOMContentLoaded", () => {
     return peak;
   }
 
-  // ---------- Coverage: blockierte Karten zuverlässig via data-blockers ----------
+  // ---------- Coverage: Karte ist covered, solange mind. 1 Kind noch liegt ----------
   function isCardCovered(cardEl) {
     if (!cardEl || cardEl.classList.contains("removed")) return false;
-    const blockers = (cardEl.dataset.blockers || "")
+    const children = (cardEl.dataset.children || "")
       .split(",")
       .map(s => s.trim())
       .filter(Boolean);
-    if (blockers.length === 0) return false;
 
-    for (const bid of blockers) {
-      const blockerEl = document.getElementById(bid);
+    if (children.length === 0) {
+      // Unterste Row: hat keine Kinder → niemals covered
+      return false;
+    }
+
+    for (const cid of children) {
+      const childEl = document.getElementById(cid);
       if (
-        blockerEl &&
-        blockerEl.isConnected &&
-        blockerEl.classList.contains("field") &&
-        !blockerEl.classList.contains("removed")
+        childEl &&
+        childEl.isConnected &&
+        childEl.classList.contains("field") &&
+        !childEl.classList.contains("removed")
       ) {
-        return true; // mindestens ein Blocker liegt noch drüber
+        // Ein Kind liegt noch → blockiert
+        return true;
       }
     }
-    return false;
+    return false; // alle Kinder entfernt → frei spielbar
   }
 
   function updateCoverageState() {
@@ -126,12 +127,12 @@ window.addEventListener("DOMContentLoaded", () => {
     fieldCards.forEach(card => {
       const covered = isCardCovered(card);
       card.classList.toggle("covered", covered);
+      // "clickable" ist rein visuell für Hover/Cursor – Auswahl steuern wir per Delegation
       card.classList.toggle("clickable", !covered && !card.classList.contains("removed"));
-      // Keine per-Card-Listener hier setzen – alles via Delegation
     });
   }
 
-  // ---------- Delegierter Klick-Handler (verhindert alte Listener-Probleme) ----------
+  // ---------- Delegierter Klick-Handler mit Shake für covered ----------
   document.addEventListener(
     "click",
     (ev) => {
@@ -140,14 +141,12 @@ window.addEventListener("DOMContentLoaded", () => {
 
       // Feldkarten (Peaks)
       if (card.classList.contains("field")) {
-        // Harte Blockade für entfernte
         if (card.classList.contains("removed")) {
           ev.preventDefault();
           ev.stopPropagation();
           return;
         }
 
-        // Covered → nur Shake, keine Auswahl
         if (card.classList.contains("covered")) {
           ev.preventDefault();
           ev.stopPropagation();
@@ -155,7 +154,7 @@ window.addEventListener("DOMContentLoaded", () => {
           return;
         }
 
-        // Spielbar
+        // spielbar
         card.classList.toggle("selected");
         checkSelectedCards();
         return;
@@ -168,10 +167,11 @@ window.addEventListener("DOMContentLoaded", () => {
         return;
       }
     },
-    true // capture, um vor evtl. anderen Listenern zu greifen
+    true // capture: blockt zuverlässig vor anderen Listenern
   );
 
   function triggerShake(el) {
+    // Klasse setzen und nach Animation wieder entfernen, damit es erneut triggerbar ist
     if (el.classList.contains("shake")) return;
     el.classList.add("shake");
     const off = () => {
@@ -181,12 +181,12 @@ window.addEventListener("DOMContentLoaded", () => {
     el.addEventListener("animationend", off);
   }
 
-  // ---------- Row-basiertes Refill: genau 1 Slot pro Zug, nur Feldkarten ----------
+  // ---------- Row-basiertes Refill: genau 1 Slot pro Zug ----------
   function refillOneRemovedSlot() {
     const removedSlots = Array.from(document.querySelectorAll(".card.field.removed"));
     if (removedSlots.length === 0) return false;
 
-    // Gruppiere nach Row-Top (visuelle Reihenfolge)
+    // Gruppiere nach visueller Row (per top-Style)
     const groupedByRow = {};
     removedSlots.forEach(slot => {
       const top = slot.parentElement?.style?.top || "";
@@ -209,18 +209,18 @@ window.addEventListener("DOMContentLoaded", () => {
         if (wasteStack.length === 0) return false;
 
         const prevCardEl = wasteStack.pop();
-        // Karte aus dem Waste-Container visuell "verbrauchen"
+        // Visuell aus Waste entfernen
         if (prevCardEl?.parentElement === wasteEl) {
           wasteEl.removeChild(prevCardEl);
         }
 
-        // Slot auffüllen (Wert übernehmen)
+        // Slot auffüllen (nur Text/Wert ersetzen; IDs/Datasets bleiben!)
         slot.classList.remove("removed", "selected", "covered");
         slot.textContent = prevCardEl?.textContent || getRandomCardValue();
         slot.style.visibility = "visible";
-        // Nach einem Refill direkt Coverage neu bewerten
-        updateCoverageState();
-        return true;
+
+        updateCoverageState(); // nach Refill neu bewerten
+        return true; // exakt 1 Slot
       }
     }
     return false;
@@ -229,7 +229,7 @@ window.addEventListener("DOMContentLoaded", () => {
   // ---------- Ziehen vom Deck ----------
   function drawCard(initial = false) {
     if (!initial) {
-      refillOneRemovedSlot(); // genau ein Slot
+      refillOneRemovedSlot();
       updateCoverageState();
     }
     if (stock.length === 0) return;
@@ -259,17 +259,16 @@ window.addEventListener("DOMContentLoaded", () => {
 
     if (total !== 11) return;
 
-    // Entferne ausgewählte Karten (Feld & Waste)
+    // Entfernen
     selectedCards.forEach(card => {
       card.classList.remove("selected");
 
       if (card.classList.contains("field")) {
-        // Feldkarte wird "weggenommen"
+        // Feldkarte „wegnehmen“ (IDs/Datasets bleiben am Element)
         card.classList.remove("clickable");
         card.classList.add("removed");
         card.style.visibility = "hidden";
       } else if (card.classList.contains("waste-card")) {
-        // Waste-Karte entfernen
         const idx = wasteStack.indexOf(card);
         if (idx >= 0) wasteStack.splice(idx, 1);
         if (card.parentElement === wasteEl) {
@@ -278,12 +277,12 @@ window.addEventListener("DOMContentLoaded", () => {
       }
     });
 
-    // Nach dem Entfernen neu berechnen
+    // Nach Entfernen Coverage neu berechnen
     updateCoverageState();
     checkWinCondition();
   }
 
-  // ---------- Win Condition (alle Feldkarten entfernt) ----------
+  // ---------- Win Condition: alle Feldkarten weg ----------
   function checkWinCondition() {
     const remainingField = document.querySelectorAll(".card.field:not(.removed)");
     if (remainingField.length === 0) {
@@ -302,10 +301,9 @@ window.addEventListener("DOMContentLoaded", () => {
   for (let d = 0; d < NUM_DIAMONDS; d++) {
     peakRow.appendChild(createDiamond(d));
   }
-
   updateCoverageState();
   drawCard(true);
 
-  // Bei Resize sicherheitshalber neu bewerten (falls Layout leicht shiftet)
+  // Bei Resize vorsichtshalber neu bewerten (Layout-Shifts)
   window.addEventListener("resize", updateCoverageState);
 });
