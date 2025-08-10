@@ -35,18 +35,15 @@ window.addEventListener("DOMContentLoaded", () => {
   function childrenIndicesTripeaks(curLen, nextLen, c) {
     if (nextLen === 1) return [0];
     if (curLen === 1) {
-      // Spitze deckt beide Enden der darunterliegenden Reihe
       return nextLen >= 2 ? [0, nextLen - 1] : [0];
     }
     if (nextLen === curLen + 1) {
-      // z.B. 1→2, 2→3
       return [c, c + 1];
     }
     if (nextLen === curLen) {
       return [c];
     }
     if (nextLen === curLen - 1) {
-      // z.B. 3→2: Ränder haben 1 Kind, Mitte hat 2
       if (c === 0) return [0];
       if (c === curLen - 1) return [nextLen - 1];
       return [c - 1, c];
@@ -142,11 +139,14 @@ window.addEventListener("DOMContentLoaded", () => {
       const clickable = !covered && !card.classList.contains("removed");
       card.classList.toggle("clickable", clickable);
     });
+
+    // --- Loss-Check bei leerem Stock auch hier absichern (z.B. nach Refill) ---
+    if (stock.length === 0) maybeTriggerLoss();              // NEW
   }
 
   // ---------- Delegierter Klick-Handler ----------
   document.addEventListener("click", (ev) => {
-    if (gameOver) return;                                    // NEW: während Game Over blocken
+    if (gameOver) return;                                    // NEW
 
     const card = ev.target.closest?.(".card");
     if (!card) return;
@@ -221,9 +221,12 @@ window.addEventListener("DOMContentLoaded", () => {
 
         updateCoverageState();
 
-        if (wasteStack.length === 0) {           // NEW: Absicherung nach Refill
+        if (wasteStack.length === 0) {           // NEW
           ensureWasteCard();
         }
+
+        // Wenn Stock leer ist, könnte jetzt kein Move mehr möglich sein
+        if (stock.length === 0) maybeTriggerLoss();          // NEW
 
         return true; // exakt 1 Slot
       }
@@ -253,18 +256,24 @@ window.addEventListener("DOMContentLoaded", () => {
       refillOneRemovedSlot();
       updateCoverageState();
     }
-    if (stock.length === 0) return;
+    if (stock.length === 0) {
+      // Stock ist leer -> direkt prüfen, ob Loss vorliegt
+      maybeTriggerLoss();                                    // NEW
+      return;
+    }
 
     const newCardValue = stock.pop();
     stockCount.textContent = stock.length;
 
     pushWasteCardWithValue(newCardValue, "stock");
+
+    // Wenn wir gerade die letzte Karte gezogen haben, jetzt prüfen
+    if (stock.length === 0) maybeTriggerLoss();              // NEW
   }
 
   deckEl.addEventListener("click", () => {
-    if (gameOver) return;                                   // NEW
+    if (gameOver) return;
     drawCard();
-    maybeTriggerLoss();                                     // NEW: nach Ziehen prüfen
   });
 
   // ---------- Kombination prüfen (mit "Waste nie leer" Fix) ----------
@@ -278,7 +287,6 @@ window.addEventListener("DOMContentLoaded", () => {
 
     if (total !== 11) return;
 
-    // Entfernen
     selectedCards.forEach(card => {
       card.classList.remove("selected");
 
@@ -301,8 +309,8 @@ window.addEventListener("DOMContentLoaded", () => {
     ensureWasteCard();
     setTimeout(ensureWasteCard, 0);
 
-    // Nach jedem erfolgreichen Zug: prüfen, ob jetzt ggf. Loss eingetreten ist
-    maybeTriggerLoss();                                     // NEW
+    // Nach jedem erfolgreichen Zug prüfen wir bei leerem Stock auch hier
+    if (stock.length === 0) maybeTriggerLoss();              // NEW
   }
 
   // ---------- Win Condition ----------
@@ -313,20 +321,20 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // ---------- Loss-Check (NEU) ----------
-  function getPlayableFieldValues() {                        // NEW
+  // ---------- Loss-Check ----------
+  function getPlayableFieldValues() {
     const cards = Array.from(document.querySelectorAll(".card.field"))
       .filter(el => !el.classList.contains("removed") && !el.classList.contains("covered"));
     return cards.map(el => getCardNumericValue(el.textContent));
   }
 
-  function getTopWasteValueOrNull() {                        // NEW
+  function getTopWasteValueOrNull() {
     if (wasteStack.length === 0) return null;
     const top = wasteStack[wasteStack.length - 1];
     return getCardNumericValue(top.textContent);
   }
 
-  function existsAnyElevenCombo() {                          // NEW
+  function existsAnyElevenCombo() {
     const vals = getPlayableFieldValues();
     // 1) Pair innerhalb der Feldkarten
     for (let i = 0; i < vals.length; i++) {
@@ -344,27 +352,60 @@ window.addEventListener("DOMContentLoaded", () => {
     return false;
   }
 
-  function maybeTriggerLoss() {                              // NEW
-    // Loss nur möglich, wenn der Stock leer ist
-    if (stock.length > 0) return;
-    // Wenn trotzdem eine 11er-Kombi existiert → kein Loss
-    if (existsAnyElevenCombo()) return;
+  function maybeTriggerLoss() {
+    if (gameOver) return;                    // NEW: nicht doppelt
+    if (stock.length > 0) return;            // Loss nur, wenn Stock leer
+    if (existsAnyElevenCombo()) return;      // Es gibt noch Moves → kein Loss
     showLoseMessage();
   }
 
-  // ---------- Messages & Restart (NEU) ----------
+  // ---------- Restart-Button & Messages ----------
+  function ensureRestartButton() {                                     // NEW
+    let btn = document.getElementById("restartBtn");
+    if (!btn) {
+      btn = document.createElement("button");
+      btn.id = "restartBtn";
+      btn.type = "button";
+      btn.textContent = "Restart";
+      // Inline-Minimalstil, falls kein CSS vorhanden:
+      btn.style.marginBottom = "10px";
+      btn.style.padding = "8px 14px";
+      btn.style.borderRadius = "8px";
+      btn.style.border = "1px solid #ccc";
+      btn.style.cursor = "pointer";
+    }
+    const target =
+      deckEl?.parentElement ||
+      document.querySelector(".deck-area") ||
+      document.querySelector(".game-container") ||
+      document.body;
+
+    if (!btn.isConnected) {
+      // VOR das Deck setzen, damit er sicher sichtbar ist
+      if (deckEl && deckEl.parentElement === target) {
+        target.insertBefore(btn, deckEl);
+      } else {
+        target.insertBefore(btn, target.firstChild);
+      }
+    }
+    btn.onclick = restartGame;
+    return btn;
+  }
+
   function showWinMessage() {
     if (gameOver) return;
     gameOver = true;
+    ensureRestartButton();                                         // NEW
     const message = document.createElement("div");
     message.innerText = "🎉 You Win! 🎉";
     message.classList.add("win-message");
     document.body.appendChild(message);
   }
 
-  function showLoseMessage() {                               // NEW
+  function showLoseMessage() {
     if (gameOver) return;
     gameOver = true;
+    ensureRestartButton();                                         // NEW
     const message = document.createElement("div");
     message.innerText = "💀 No moves left!";
     message.classList.add("win-message");
@@ -373,53 +414,31 @@ window.addEventListener("DOMContentLoaded", () => {
     document.body.appendChild(message);
   }
 
-  function restartGame() {                                   // NEW
-    // Flags & UI zurücksetzen
+  function restartGame() {
     gameOver = false;
-    // Messages entfernen
     document.querySelectorAll(".win-message").forEach(el => el.remove());
-    // Waste leeren
     wasteStack.splice(0, wasteStack.length);
     while (wasteEl.firstChild) wasteEl.removeChild(wasteEl.firstChild);
-    // Feld leeren
     while (peakRow.firstChild) peakRow.removeChild(peakRow.firstChild);
-    // Stock neu
+
     stock = Array.from({ length: 24 }, () => getRandomCardValue());
     stockCount.textContent = stock.length;
-    // Feld neu aufbauen
+
     for (let d = 0; d < NUM_DIAMONDS; d++) {
       peakRow.appendChild(createDiamond(d));
     }
     updateCoverageState();
-    // Erste Waste-Karte ziehen
     drawCard(true);
     ensureWasteCard();
   }
 
-  // Falls kein Button vorhanden, erzeugen und einhängen
-  if (!restartBtn) {                                         // NEW
-    restartBtn = document.createElement("button");
-    restartBtn.id = "restartBtn";
-    restartBtn.textContent = "Restart";
-    restartBtn.style.marginBottom = "10px";
-    restartBtn.style.padding = "8px 14px";
-    restartBtn.style.borderRadius = "8px";
-    restartBtn.style.border = "1px solid #ccc";
-    restartBtn.style.cursor = "pointer";
-    // knapp oberhalb der Deck-Area platzieren
-    const gameContainer = document.querySelector(".game-container") || document.body;
-    gameContainer.insertBefore(restartBtn, gameContainer.querySelector(".deck-area") || deckEl.parentElement);
-  }
-  restartBtn.addEventListener("click", restartGame);         // NEW
-
   // ---------- Initiales Setup ----------
+  ensureRestartButton();                                          // NEW (Button sicher anlegen)
   for (let d = 0; d < NUM_DIAMONDS; d++) {
     peakRow.appendChild(createDiamond(d));
   }
   updateCoverageState();
   drawCard(true);
-
   if (wasteStack.length === 0) ensureWasteCard();
-
   window.addEventListener("resize", updateCoverageState);
 });
