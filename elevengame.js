@@ -230,6 +230,24 @@ window.addEventListener("DOMContentLoaded", () => {
     return false;
   }
 
+  // ---------- Waste-Helpers (NEU) ----------
+  function pushWasteCardWithValue(value, source = "stock") {
+    const newCard = document.createElement("div");
+    newCard.classList.add("waste-card", "card", "clickable");
+    newCard.textContent = value;
+    newCard.dataset.source = source; // "stock" | "synthetic"
+    newCard.style.zIndex = String(wasteStack.length);
+    // per Delegation klickbar
+    wasteEl.appendChild(newCard);
+    wasteStack.push(newCard);
+  }
+
+  function ensureWasteCard() {
+    if (wasteStack.length > 0) return;
+    // Falls leer: synthetische Zufallskarte hinzufügen
+    pushWasteCardWithValue(getRandomCardValue(), "synthetic");
+  }
+
   // ---------- Ziehen vom Deck ----------
   function drawCard(initial = false) {
     if (!initial) {
@@ -241,19 +259,13 @@ window.addEventListener("DOMContentLoaded", () => {
     const newCardValue = stock.pop();
     stockCount.textContent = stock.length;
 
-    const newCard = document.createElement("div");
-    newCard.classList.add("waste-card", "card", "clickable");
-    newCard.textContent = newCardValue;
-    newCard.style.zIndex = String(wasteStack.length);
-
-    // KEINE per-Element-Listener hier – Delegation klickt waste-cards
-    wasteEl.appendChild(newCard);
-    wasteStack.push(newCard);
+    // Nutze die Helper-Funktion (konsequent)
+    pushWasteCardWithValue(newCardValue, "stock");
   }
 
   deckEl.addEventListener("click", () => drawCard());
 
-  // ---------- Kombination prüfen ----------
+  // ---------- Kombination prüfen (mit "Waste nie leer" Fix) ----------
   function checkSelectedCards() {
     const selectedCards = Array.from(document.querySelectorAll(".card.selected"));
     if (selectedCards.length === 0) return;
@@ -263,6 +275,9 @@ window.addEventListener("DOMContentLoaded", () => {
       .reduce((a, b) => a + b, 0);
 
     if (total !== 11) return;
+
+    // Vorherige Anzahl Waste-Karten merken
+    const beforeWasteCount = wasteStack.length;
 
     // Entfernen
     selectedCards.forEach(card => {
@@ -284,6 +299,12 @@ window.addEventListener("DOMContentLoaded", () => {
 
     updateCoverageState(); // Blockaden stabil neu bewerten
     checkWinCondition();
+
+    // *** WASTE NIE LEER: wenn in dieser Kombi eine Waste-Karte verbraucht wurde
+    // und dadurch der Waste leer ist, sofort nachfüllen ***
+    if (beforeWasteCount > 0 && wasteStack.length === 0) {
+      ensureWasteCard();
+    }
   }
 
   // ---------- Win Condition ----------
@@ -307,6 +328,9 @@ window.addEventListener("DOMContentLoaded", () => {
   }
   updateCoverageState(); // direkt nach dem Deal
   drawCard(true);
+
+  // Falls der Anfangszug den Waste leer ließe (sollte nicht passieren) – absichern:
+  if (wasteStack.length === 0) ensureWasteCard();
 
   // Bei Resize/Rotation sicherheitshalber neu bewerten
   window.addEventListener("resize", updateCoverageState);
