@@ -79,13 +79,13 @@ html, body {
   box-shadow: 0 0 12px 4px rgba(255, 255, 0, 0.6);
 }
 
-/* Verdeckt liegende Karten ohne Transparenz */
 .card.covered {
-  opacity: 1 !important; /* volle Deckkraft erzwingen */
   background: linear-gradient(145deg, #dcdcdc, #e9e9e9);
-  filter: grayscale(0.35) brightness(0.95);
+  filter: grayscale(0.4) brightness(0.95);
   cursor: default;
+  opacity: 1 !important; /* GANZ ans Ende der Datei setzen */
 }
+
 
 
 /* Shake nur für covered */
