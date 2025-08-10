@@ -83,6 +83,26 @@ html, body {
   background: linear-gradient(145deg, #d4d4d4, #e5e5e5);
 }
 
+/* === neue Ergänzung ab hier === */
+/* Verdeckt liegende Karten optisch abgrenzen */
+.card.covered {
+  filter: grayscale(1) brightness(0.85);
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Optional: leichtes Schütteln, wenn man sie trotzdem anklickt */
+.card.covered.shake {
+  animation: shake 0.15s ease-in-out;
+}
+
+@keyframes shake {
+  0% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  50% { transform: translateX(3px); }
+  75% { transform: translateX(-3px); }
+  100% { transform: translateX(0); }
+}
 .deck-area {
   display: flex;
   justify-content: center;
