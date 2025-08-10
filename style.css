@@ -79,14 +79,15 @@ html, body {
   box-shadow: 0 0 12px 4px rgba(255, 255, 0, 0.6);
 }
 
-/* Verdeckt: optische Abgrenzung (kannst du so lassen, wie du sie bereits hast) */
+/* Verdeckt liegende Karten optisch abgrenzen – ohne Transparenz */
 .card.covered {
-  /* dein existierender Hintergrund */
-  /* optional zusätzlich: */
-  filter: grayscale(1) brightness(0.85);
-  opacity: 0.6;
+  /* leichte Grau-Optik, aber volle Deckkraft */
+  background: linear-gradient(145deg, #dcdcdc, #e9e9e9);
+  filter: grayscale(0.35) brightness(0.95);
+  /* KEINE opacity hier */
   cursor: default;
 }
+
 
 /* Shake nur für covered */
 .card.covered.shake {
