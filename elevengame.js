@@ -159,16 +159,29 @@ window.addEventListener("DOMContentLoaded", () => {
       const covered = isCardCovered(card);
       card.classList.toggle("covered", covered);
       card.classList.toggle("clickable", !covered && !card.classList.contains("removed"));
+
+      // Klick-Handler neu setzen
+      card.onclick = null; // alte entfernen
       if (!covered && !card.classList.contains("removed")) {
+        // normale Karte → auswählbar
         card.onclick = () => {
           card.classList.toggle("selected");
           checkSelectedCards();
         };
-      } else {
-        card.onclick = null;
+      } else if (covered) {
+        // verdeckte Karte → Shake-Animation
+        card.onclick = () => {
+          if (!card.classList.contains("shake")) {
+            card.classList.add("shake");
+            setTimeout(() => {
+              card.classList.remove("shake");
+            }, 200); // 0.15s Animation + kleiner Puffer
+          }
+        };
       }
     });
   }
+
   // ==== COVERAGE FIX END ====
 
   // Initial Setup
