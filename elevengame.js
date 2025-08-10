@@ -17,6 +17,7 @@ window.addEventListener("DOMContentLoaded", () => {
   const stock = Array.from({ length: 24 }, () => getRandomCardValue());
   const wasteStack = [];
 
+  // --- Row-basiertes Refill, nur 1 Slot pro Zug ---
   function refillOneRemovedSlot() {
     const removedSlots = Array.from(document.querySelectorAll(".card.removed"));
     const groupedByRow = {};
@@ -31,15 +32,17 @@ window.addEventListener("DOMContentLoaded", () => {
       for (const slot of rowSlots) {
         if (wasteStack.length === 0) return false;
         const prevCard = wasteStack.pop();
+        // Slot sichtbar machen und Inhalt setzen
         slot.classList.remove("removed", "clickable", "selected", "covered");
         slot.textContent = prevCard.textContent;
         slot.style.visibility = "visible";
-        return true;
+        return true; // genau 1 Slot pro Zug
       }
     }
     return false;
   }
 
+  // --- Ziehen vom Stock, danach ggf. Refill + Coverage-Update ---
   function drawCard(initial = false) {
     if (!initial) {
       refillOneRemovedSlot();
@@ -62,6 +65,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
   deckEl.addEventListener("click", () => drawCard());
 
+  // --- Diamond/Peak erstellen; Feldkarten erhalten .field + data-row ---
   function createDiamond() {
     const peak = document.createElement("div");
     peak.classList.add("peak");
@@ -76,7 +80,7 @@ window.addEventListener("DOMContentLoaded", () => {
       for (let i = 0; i < numCards; i++) {
         const card = document.createElement("div");
         card.classList.add("card", "field");
-        card.dataset.row = rowIndex; // row-Info für Coverage-Check
+        card.dataset.row = rowIndex.toString();
         card.textContent = getRandomCardValue();
         row.appendChild(card);
         rowCards.push(card);
@@ -87,21 +91,24 @@ window.addEventListener("DOMContentLoaded", () => {
     return peak;
   }
 
+  // --- Kartenkombination prüfen (nur klickbare/ausgewählte Karten zählen) ---
   function checkSelectedCards() {
     const selectedCards = document.querySelectorAll(".card.clickable.selected");
     const selectedValues = Array.from(selectedCards).map(card => getCardNumericValue(card.textContent));
-    let total = selectedValues.reduce((a, b) => a + b, 0);
+    const total = selectedValues.reduce((a, b) => a + b, 0);
+
     if (total === 11) {
       selectedCards.forEach(card => {
         card.classList.remove("clickable", "selected");
         card.classList.add("removed");
         card.style.visibility = "hidden";
       });
-      updateCoverageState();
+      updateCoverageState(); // nach Entfernen neu bewerten
       checkWinCondition();
     }
   }
 
+  // --- (Unverändert) Win-Anzeige, Logik ggf. später verfeinern ---
   function checkWinCondition() {
     const remainingCards = document.querySelectorAll('.card-slot:not(.removed)');
     const remainingPeakCards = Array.from(remainingCards).filter((slot) => {
@@ -120,7 +127,9 @@ window.addEventListener("DOMContentLoaded", () => {
     document.body.appendChild(message);
   }
 
-  // ==== COVERAGE FIX START ====
+  /* ===============================
+     COVERED-CARD FIX + SHAKE
+     =============================== */
   function getBounds(el) {
     const r = el.getBoundingClientRect();
     const midX = r.left + r.width / 2;
@@ -138,16 +147,15 @@ window.addEventListener("DOMContentLoaded", () => {
   function isCardCovered(cardEl) {
     if (!cardEl || cardEl.classList.contains("removed")) return false;
     const meBounds = getBounds(cardEl);
-    const myRow = parseInt(cardEl.dataset.row, 10);
+    const myRow = parseInt(cardEl.dataset.row || "-1", 10);
     const allCards = Array.from(document.querySelectorAll(".card.field"))
       .filter(c => c !== cardEl && !c.classList.contains("removed"));
+
     for (const other of allCards) {
-      const otherRow = parseInt(other.dataset.row, 10);
-      if (otherRow < myRow) {
+      const otherRow = parseInt(other.dataset.row || "-1", 10);
+      if (Number.isInteger(myRow) && Number.isInteger(otherRow) && otherRow < myRow) {
         const oB = getBounds(other);
-        if (oB.midY < meBounds.midY && overlapsEnough(meBounds, oB)) {
-          return true;
-        }
+        if (oB.midY < meBounds.midY && overlapsEnough(meBounds, oB)) return true;
       }
     }
     return false;
@@ -157,38 +165,38 @@ window.addEventListener("DOMContentLoaded", () => {
     const fieldCards = document.querySelectorAll(".card.field");
     fieldCards.forEach(card => {
       const covered = isCardCovered(card);
+
       card.classList.toggle("covered", covered);
       card.classList.toggle("clickable", !covered && !card.classList.contains("removed"));
 
-      // Klick-Handler neu setzen
-      card.onclick = null; // alte entfernen
+      // Click-Handler immer neu setzen (alte entfernen)
+      card.onclick = null;
+
       if (!covered && !card.classList.contains("removed")) {
-        // normale Karte → auswählbar
+        // Spielbare Karte → auswählbar
         card.onclick = () => {
           card.classList.toggle("selected");
           checkSelectedCards();
         };
       } else if (covered) {
-        // verdeckte Karte → Shake-Animation
+        // Verdeckte Karte → Shake-Feedback
         card.onclick = () => {
           if (!card.classList.contains("shake")) {
             card.classList.add("shake");
-            setTimeout(() => {
-              card.classList.remove("shake");
-            }, 200); // 0.15s Animation + kleiner Puffer
+            setTimeout(() => card.classList.remove("shake"), 200); // ~0.15s + Puffer
           }
         };
       }
     });
   }
 
-  // ==== COVERAGE FIX END ====
+  // Re-Layout (z.B. bei Resize/Orientation) neu bewerten
+  window.addEventListener("resize", updateCoverageState);
 
-  // Initial Setup
+  // --- Initial Deal ---
   for (let i = 0; i < 3; i++) {
     peakRow.appendChild(createDiamond());
   }
-
-  updateCoverageState(); // nach dem Deal
+  updateCoverageState();
   drawCard(true);
 });
