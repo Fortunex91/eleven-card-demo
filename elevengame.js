@@ -224,13 +224,19 @@ window.addEventListener("DOMContentLoaded", () => {
         slot.style.visibility = "visible";
 
         updateCoverageState(); // direkt nach Refill neu bewerten
+
+        // --- Absicherung: falls Refill die letzte Waste-Karte verbraucht hat ---
+        if (wasteStack.length === 0) {           // NEW
+          ensureWasteCard();                      // NEW
+        }
+
         return true; // exakt 1 Slot
       }
     }
     return false;
   }
 
-  // ---------- Waste-Helpers (NEU) ----------
+  // ---------- Waste-Helpers ----------
   function pushWasteCardWithValue(value, source = "stock") {
     const newCard = document.createElement("div");
     newCard.classList.add("waste-card", "card", "clickable");
@@ -276,9 +282,6 @@ window.addEventListener("DOMContentLoaded", () => {
 
     if (total !== 11) return;
 
-    // Vorherige Anzahl Waste-Karten merken
-    const beforeWasteCount = wasteStack.length;
-
     // Entfernen
     selectedCards.forEach(card => {
       card.classList.remove("selected");
@@ -300,11 +303,9 @@ window.addEventListener("DOMContentLoaded", () => {
     updateCoverageState(); // Blockaden stabil neu bewerten
     checkWinCondition();
 
-    // *** WASTE NIE LEER: wenn in dieser Kombi eine Waste-Karte verbraucht wurde
-    // und dadurch der Waste leer ist, sofort nachfüllen ***
-    if (beforeWasteCount > 0 && wasteStack.length === 0) {
-      ensureWasteCard();
-    }
+    // --- WASTE NIE LEER: immer absichern, unabhängig vom vorherigen Zustand ---
+    ensureWasteCard();                  // NEW
+    setTimeout(ensureWasteCard, 0);     // NEW (Fallback nach DOM-Reflow)
   }
 
   // ---------- Win Condition ----------
