@@ -3,6 +3,7 @@ window.addEventListener("DOMContentLoaded", () => {
   const deckEl = document.getElementById("deck");
   const wasteEl = document.getElementById("waste");
   const stockCount = document.getElementById("stockCount");
+  let restartBtn = document.getElementById("restartBtn");        // NEW
 
   // Diamond/Peak Layout
   const rowsPerDiamond = [1, 2, 3, 2, 1];
@@ -10,8 +11,10 @@ window.addEventListener("DOMContentLoaded", () => {
 
   // Kartenwerte / Stapel
   const cardValues = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
-  const stock = Array.from({ length: 24 }, () => getRandomCardValue());
+  let stock = Array.from({ length: 24 }, () => getRandomCardValue()); // CHANGED (let, da Reset)
   const wasteStack = []; // DOM-Elemente der Waste-Karten (oberste = last)
+
+  let gameOver = false;                                         // NEW
 
   function getRandomCardValue() {
     return cardValues[Math.floor(Math.random() * cardValues.length)];
@@ -40,7 +43,6 @@ window.addEventListener("DOMContentLoaded", () => {
       return [c, c + 1];
     }
     if (nextLen === curLen) {
-      // 3→3 (kommt im Muster nicht vor, aber zur Sicherheit)
       return [c];
     }
     if (nextLen === curLen - 1) {
@@ -49,7 +51,6 @@ window.addEventListener("DOMContentLoaded", () => {
       if (c === curLen - 1) return [nextLen - 1];
       return [c - 1, c];
     }
-    // Fallback (sollte im gegebenen Muster nicht auftreten)
     const x = Math.round(c * (nextLen - 1) / Math.max(1, (curLen - 1)));
     return [Math.max(0, Math.min(nextLen - 1, x))];
   }
@@ -117,10 +118,8 @@ window.addEventListener("DOMContentLoaded", () => {
       .map(s => s.trim())
       .filter(Boolean);
 
-    // Unterste Row hat keine Kinder → nie covered
     if (children.length === 0) return false;
 
-    // covered solange mind. ein Kind noch liegt
     for (const cid of children) {
       const childEl = document.getElementById(cid);
       if (
@@ -140,14 +139,15 @@ window.addEventListener("DOMContentLoaded", () => {
     fieldCards.forEach(card => {
       const covered = isCardCovered(card);
       card.classList.toggle("covered", covered);
-      // "clickable" nur für Optik; die eigentliche Blockade macht der delegierte Handler
       const clickable = !covered && !card.classList.contains("removed");
       card.classList.toggle("clickable", clickable);
     });
   }
 
-  // ---------- Delegierter Klick-Handler (blockt covered + triggert Shake) ----------
+  // ---------- Delegierter Klick-Handler ----------
   document.addEventListener("click", (ev) => {
+    if (gameOver) return;                                    // NEW: während Game Over blocken
+
     const card = ev.target.closest?.(".card");
     if (!card) return;
 
@@ -161,7 +161,6 @@ window.addEventListener("DOMContentLoaded", () => {
         triggerShake(card);
         return;
       }
-      // spielbar
       card.classList.toggle("selected");
       checkSelectedCards();
       return;
@@ -173,10 +172,9 @@ window.addEventListener("DOMContentLoaded", () => {
       checkSelectedCards();
       return;
     }
-  }, true); // capture, damit nichts "durchrutscht"
+  }, true);
 
   function triggerShake(el) {
-    // Shake nur bei covered sinnvoll
     if (!el.classList.contains("covered")) return;
     if (el.classList.contains("shake")) return;
     el.classList.add("shake");
@@ -192,7 +190,6 @@ window.addEventListener("DOMContentLoaded", () => {
     const removedSlots = Array.from(document.querySelectorAll(".card.field.removed"));
     if (removedSlots.length === 0) return false;
 
-    // nach visueller Row gruppieren (per top der .card-row)
     const groupedByRow = {};
     removedSlots.forEach(slot => {
       const top = slot.parentElement?.style?.top || "";
@@ -218,16 +215,14 @@ window.addEventListener("DOMContentLoaded", () => {
           wasteEl.removeChild(prevCardEl);
         }
 
-        // WICHTIG: Slot-Element bleibt identisch (IDs/Datasets bleiben, inkl. children)
         slot.classList.remove("removed", "selected", "covered");
         slot.textContent = prevCardEl?.textContent || getRandomCardValue();
         slot.style.visibility = "visible";
 
-        updateCoverageState(); // direkt nach Refill neu bewerten
+        updateCoverageState();
 
-        // --- Absicherung: falls Refill die letzte Waste-Karte verbraucht hat ---
-        if (wasteStack.length === 0) {           // NEW
-          ensureWasteCard();                      // NEW
+        if (wasteStack.length === 0) {           // NEW: Absicherung nach Refill
+          ensureWasteCard();
         }
 
         return true; // exakt 1 Slot
@@ -243,14 +238,12 @@ window.addEventListener("DOMContentLoaded", () => {
     newCard.textContent = value;
     newCard.dataset.source = source; // "stock" | "synthetic"
     newCard.style.zIndex = String(wasteStack.length);
-    // per Delegation klickbar
     wasteEl.appendChild(newCard);
     wasteStack.push(newCard);
   }
 
   function ensureWasteCard() {
     if (wasteStack.length > 0) return;
-    // Falls leer: synthetische Zufallskarte hinzufügen
     pushWasteCardWithValue(getRandomCardValue(), "synthetic");
   }
 
@@ -265,11 +258,14 @@ window.addEventListener("DOMContentLoaded", () => {
     const newCardValue = stock.pop();
     stockCount.textContent = stock.length;
 
-    // Nutze die Helper-Funktion (konsequent)
     pushWasteCardWithValue(newCardValue, "stock");
   }
 
-  deckEl.addEventListener("click", () => drawCard());
+  deckEl.addEventListener("click", () => {
+    if (gameOver) return;                                   // NEW
+    drawCard();
+    maybeTriggerLoss();                                     // NEW: nach Ziehen prüfen
+  });
 
   // ---------- Kombination prüfen (mit "Waste nie leer" Fix) ----------
   function checkSelectedCards() {
@@ -287,7 +283,6 @@ window.addEventListener("DOMContentLoaded", () => {
       card.classList.remove("selected");
 
       if (card.classList.contains("field")) {
-        // Feldkarte wegnehmen (Element bleibt, damit IDs/Datasets/children erhalten bleiben)
         card.classList.remove("clickable");
         card.classList.add("removed");
         card.style.visibility = "hidden";
@@ -300,12 +295,14 @@ window.addEventListener("DOMContentLoaded", () => {
       }
     });
 
-    updateCoverageState(); // Blockaden stabil neu bewerten
+    updateCoverageState();
     checkWinCondition();
 
-    // --- WASTE NIE LEER: immer absichern, unabhängig vom vorherigen Zustand ---
-    ensureWasteCard();                  // NEW
-    setTimeout(ensureWasteCard, 0);     // NEW (Fallback nach DOM-Reflow)
+    ensureWasteCard();
+    setTimeout(ensureWasteCard, 0);
+
+    // Nach jedem erfolgreichen Zug: prüfen, ob jetzt ggf. Loss eingetreten ist
+    maybeTriggerLoss();                                     // NEW
   }
 
   // ---------- Win Condition ----------
@@ -316,23 +313,113 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // ---------- Loss-Check (NEU) ----------
+  function getPlayableFieldValues() {                        // NEW
+    const cards = Array.from(document.querySelectorAll(".card.field"))
+      .filter(el => !el.classList.contains("removed") && !el.classList.contains("covered"));
+    return cards.map(el => getCardNumericValue(el.textContent));
+  }
+
+  function getTopWasteValueOrNull() {                        // NEW
+    if (wasteStack.length === 0) return null;
+    const top = wasteStack[wasteStack.length - 1];
+    return getCardNumericValue(top.textContent);
+  }
+
+  function existsAnyElevenCombo() {                          // NEW
+    const vals = getPlayableFieldValues();
+    // 1) Pair innerhalb der Feldkarten
+    for (let i = 0; i < vals.length; i++) {
+      for (let j = i + 1; j < vals.length; j++) {
+        if (vals[i] + vals[j] === 11) return true;
+      }
+    }
+    // 2) Waste-Top + irgendeine Feldkarte
+    const wasteTop = getTopWasteValueOrNull();
+    if (wasteTop != null) {
+      for (const v of vals) {
+        if (wasteTop + v === 11) return true;
+      }
+    }
+    return false;
+  }
+
+  function maybeTriggerLoss() {                              // NEW
+    // Loss nur möglich, wenn der Stock leer ist
+    if (stock.length > 0) return;
+    // Wenn trotzdem eine 11er-Kombi existiert → kein Loss
+    if (existsAnyElevenCombo()) return;
+    showLoseMessage();
+  }
+
+  // ---------- Messages & Restart (NEU) ----------
   function showWinMessage() {
+    if (gameOver) return;
+    gameOver = true;
     const message = document.createElement("div");
     message.innerText = "🎉 You Win! 🎉";
     message.classList.add("win-message");
     document.body.appendChild(message);
   }
 
+  function showLoseMessage() {                               // NEW
+    if (gameOver) return;
+    gameOver = true;
+    const message = document.createElement("div");
+    message.innerText = "💀 No moves left!";
+    message.classList.add("win-message");
+    message.style.background = "#e74c3c";
+    message.style.color = "#fff";
+    document.body.appendChild(message);
+  }
+
+  function restartGame() {                                   // NEW
+    // Flags & UI zurücksetzen
+    gameOver = false;
+    // Messages entfernen
+    document.querySelectorAll(".win-message").forEach(el => el.remove());
+    // Waste leeren
+    wasteStack.splice(0, wasteStack.length);
+    while (wasteEl.firstChild) wasteEl.removeChild(wasteEl.firstChild);
+    // Feld leeren
+    while (peakRow.firstChild) peakRow.removeChild(peakRow.firstChild);
+    // Stock neu
+    stock = Array.from({ length: 24 }, () => getRandomCardValue());
+    stockCount.textContent = stock.length;
+    // Feld neu aufbauen
+    for (let d = 0; d < NUM_DIAMONDS; d++) {
+      peakRow.appendChild(createDiamond(d));
+    }
+    updateCoverageState();
+    // Erste Waste-Karte ziehen
+    drawCard(true);
+    ensureWasteCard();
+  }
+
+  // Falls kein Button vorhanden, erzeugen und einhängen
+  if (!restartBtn) {                                         // NEW
+    restartBtn = document.createElement("button");
+    restartBtn.id = "restartBtn";
+    restartBtn.textContent = "Restart";
+    restartBtn.style.marginBottom = "10px";
+    restartBtn.style.padding = "8px 14px";
+    restartBtn.style.borderRadius = "8px";
+    restartBtn.style.border = "1px solid #ccc";
+    restartBtn.style.cursor = "pointer";
+    // knapp oberhalb der Deck-Area platzieren
+    const gameContainer = document.querySelector(".game-container") || document.body;
+    gameContainer.insertBefore(restartBtn, gameContainer.querySelector(".deck-area") || deckEl.parentElement);
+  }
+  restartBtn.addEventListener("click", restartGame);         // NEW
+
   // ---------- Initiales Setup ----------
   for (let d = 0; d < NUM_DIAMONDS; d++) {
     peakRow.appendChild(createDiamond(d));
   }
-  updateCoverageState(); // direkt nach dem Deal
+  updateCoverageState();
   drawCard(true);
 
-  // Falls der Anfangszug den Waste leer ließe (sollte nicht passieren) – absichern:
   if (wasteStack.length === 0) ensureWasteCard();
 
-  // Bei Resize/Rotation sicherheitshalber neu bewerten
   window.addEventListener("resize", updateCoverageState);
 });
