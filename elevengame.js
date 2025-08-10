@@ -34,19 +34,6 @@ window.addEventListener("DOMContentLoaded", () => {
         slot.classList.remove("removed", "clickable", "selected", "covered");
         slot.textContent = prevCard.textContent;
         slot.style.visibility = "visible";
-        const rect = slot.getBoundingClientRect();
-        const centerX = rect.left + rect.width / 2;
-        const centerY = rect.top + rect.height / 2;
-        const blockers = Array.from(document.elementsFromPoint(centerX, centerY)).filter(el => el !== slot && el.classList.contains("card") && el.getBoundingClientRect().top > rect.top);
-        if (blockers.length) {
-          slot.classList.add("covered");
-        } else {
-          slot.classList.add("clickable");
-          slot.addEventListener("click", () => {
-            slot.classList.toggle("selected");
-            checkSelectedCards();
-          }, { once: true });
-        }
         return true;
       }
     }
@@ -54,7 +41,10 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   function drawCard(initial = false) {
-    if (!initial) refillOneRemovedSlot();
+    if (!initial) {
+      refillOneRemovedSlot();
+      updateCoverageState();
+    }
     if (stock.length === 0) return;
     const newCardValue = stock.pop();
     stockCount.textContent = stock.length;
@@ -85,38 +75,14 @@ window.addEventListener("DOMContentLoaded", () => {
       const rowCards = [];
       for (let i = 0; i < numCards; i++) {
         const card = document.createElement("div");
-        card.classList.add("card");
+        card.classList.add("card", "field");
+        card.dataset.row = rowIndex; // row-Info für Coverage-Check
         card.textContent = getRandomCardValue();
         row.appendChild(card);
         rowCards.push(card);
       }
       peak.appendChild(row);
       cardMatrix.push(rowCards);
-    });
-    const numRows = cardMatrix.length;
-    cardMatrix.forEach((row, rowIndex) => {
-      row.forEach((card, colIndex) => {
-        let isCovered = false;
-        if (rowIndex < numRows - 1) {
-          const nextRow = cardMatrix[rowIndex + 1];
-          for (let i = 0; i < nextRow.length; i++) {
-            const offset = Math.abs(i - colIndex);
-            if (offset <= 1) {
-              isCovered = true;
-              break;
-            }
-          }
-        }
-        if (!isCovered) {
-          card.classList.add("clickable");
-          card.addEventListener("click", () => {
-            card.classList.toggle("selected");
-            checkSelectedCards();
-          });
-        } else {
-          card.classList.add("covered");
-        }
-      });
     });
     return peak;
   }
@@ -131,23 +97,7 @@ window.addEventListener("DOMContentLoaded", () => {
         card.classList.add("removed");
         card.style.visibility = "hidden";
       });
-      const coveredCards = document.querySelectorAll(".card.covered");
-      coveredCards.forEach(card => {
-        const cardRect = card.getBoundingClientRect();
-        const cardCenterX = cardRect.left + cardRect.width / 2;
-        const cardCenterY = cardRect.top + cardRect.height / 2;
-        const isStillCovered = Array.from(document.elementsFromPoint(cardCenterX, cardCenterY)).some(el => {
-          return el !== card && el.classList.contains("card") && !el.classList.contains("covered") && el.getBoundingClientRect().top > cardRect.top;
-        });
-        if (!isStillCovered) {
-          card.classList.remove("covered");
-          card.classList.add("clickable");
-          card.addEventListener("click", () => {
-            card.classList.toggle("selected");
-            checkSelectedCards();
-          }, { once: true });
-        }
-      });
+      updateCoverageState();
       checkWinCondition();
     }
   }
@@ -170,10 +120,62 @@ window.addEventListener("DOMContentLoaded", () => {
     document.body.appendChild(message);
   }
 
+  // ==== COVERAGE FIX START ====
+  function getBounds(el) {
+    const r = el.getBoundingClientRect();
+    const midX = r.left + r.width / 2;
+    const midY = r.top + r.height / 2;
+    return { ...r, midX, midY, width: r.width, height: r.height };
+  }
+
+  function overlapsEnough(a, b) {
+    const overlapX = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+    const overlapY = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+    const xRatio = overlapX / Math.min(a.width, b.width);
+    return overlapY >= 10 && xRatio >= 0.25;
+  }
+
+  function isCardCovered(cardEl) {
+    if (!cardEl || cardEl.classList.contains("removed")) return false;
+    const meBounds = getBounds(cardEl);
+    const myRow = parseInt(cardEl.dataset.row, 10);
+    const allCards = Array.from(document.querySelectorAll(".card.field"))
+      .filter(c => c !== cardEl && !c.classList.contains("removed"));
+    for (const other of allCards) {
+      const otherRow = parseInt(other.dataset.row, 10);
+      if (otherRow < myRow) {
+        const oB = getBounds(other);
+        if (oB.midY < meBounds.midY && overlapsEnough(meBounds, oB)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function updateCoverageState() {
+    const fieldCards = document.querySelectorAll(".card.field");
+    fieldCards.forEach(card => {
+      const covered = isCardCovered(card);
+      card.classList.toggle("covered", covered);
+      card.classList.toggle("clickable", !covered && !card.classList.contains("removed"));
+      if (!covered && !card.classList.contains("removed")) {
+        card.onclick = () => {
+          card.classList.toggle("selected");
+          checkSelectedCards();
+        };
+      } else {
+        card.onclick = null;
+      }
+    });
+  }
+  // ==== COVERAGE FIX END ====
+
+  // Initial Setup
   for (let i = 0; i < 3; i++) {
     peakRow.appendChild(createDiamond());
   }
 
+  updateCoverageState(); // nach dem Deal
   drawCard(true);
 });
-
