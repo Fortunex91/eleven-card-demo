@@ -40,8 +40,18 @@ html, body {
   --popup-shadow: 0 6px 18px rgba(0,0,0,0.28);
 }
 
-/* Irgendein "Stock:"-Label sicher ausblenden */
-#stockLabel, .stock-label { display: none !important; }
+/* Alle Varianten eines möglichen "Stock:"-Labels sicher ausblenden */
+#stockLabel,
+.stock-label,
+.stock-title,
+[data-label="stock"],
+[data-stock-label] {
+  display: none !important;
+}
+
+/* Zusätzlicher Fallback: falls ein fremdes Label im HUD steckt,
+   verstecke jeden direkten Text-Node mit "Stock:" über CSS. */
+.score-hud span:has(> .stock-label) { display: none !important; }
 
 .game-container {
   display: flex;
@@ -244,7 +254,7 @@ html, body {
 }
 @keyframes flipCard {
   0%   { transform: rotateY(90deg); }
-  100% { transform: rotateY(0deg); }
+  100% { transform: rotateY(0); }
 }
 
 /* Win/Lose Message */
@@ -322,14 +332,14 @@ html, body {
 /* Sicherheitsnetz: niemals transparente covered Karten */
 .card.covered { opacity: 1 !important; }
 
-/* ===== Zeitleiste unten im Spielfeld ===== */
+/* ===== Zeitleiste unten im Spielfeld (kleiner) ===== */
 #timebar {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
   bottom: 12px;
-  width: min(920px, 88vw);
-  height: 16px;
+  width: min(520px, 60vw);  /* deutlich kleiner */
+  height: 10px;             /* niedriger */
   border-radius: 999px;
   background: rgba(10,18,14,.55);
   border: 1px solid rgba(53,88,70,.6);
@@ -340,17 +350,17 @@ html, body {
 #timebar .fill {
   height: 100%;
   width: 100%;
-  background: linear-gradient(90deg, #51d0a0, #6ae6bb);
-  transition: width .12s linear;
+  background: #41c77d;            /* wird per JS dynamisch zu Gelb/Rot */
+  transition: width .12s linear, background-color .2s linear;
 }
 #timebar .label {
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 800;
   color: #0f1b15;
-  text-shadow: 0 1px 0 rgba(255,255,255,.2);
+  text-shadow: 0 1px 0 rgba(255,255,255,.25);
   mix-blend-mode: soft-light;
 }
