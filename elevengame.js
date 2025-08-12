@@ -3,34 +3,30 @@ window.addEventListener("DOMContentLoaded", () => {
   const deckEl = document.getElementById("deck");
   const wasteEl = document.getElementById("waste");
   const stockCount = document.getElementById("stockCount");
-  let restartBtn = document.getElementById("restartBtn");        // NEW
+  let restartBtn = document.getElementById("restartBtn");
 
   // ---------- Score/HUD ----------
-  let score = 0;                   // NEW
-  let streak = 0;                  // NEW
-  const DRAW_PENALTY = -1;         // NEW
-  const WIN_BONUS = 100;           // NEW
+  let score = 0;
+  let streak = 0;
 
-  function ensureScoreHud() {      // NEW
+  // Scoring-Konstanten – frei anpassbar:
+  const WRONG_COMBO_PENALTY = -5;   // Minuspunkte bei falscher Kombi (>11)
+  const PEAK_CLEAR_BONUS = 50;      // Bonus pro komplett geleertem Peak
+  const WIN_BONUS = 100;            // Bonus, wenn das gesamte Feld leer ist
+
+  // Für Peak-Clear-Erkennung
+  const clearedPeaks = new Set();
+
+  function ensureScoreHud() {
     let hud = document.getElementById("scoreHud");
     if (!hud) {
       hud = document.createElement("div");
       hud.id = "scoreHud";
-      hud.style.display = "inline-flex";
-      hud.style.gap = "12px";
-      hud.style.alignItems = "center";
-      hud.style.margin = "0 0 10px 0";
-      hud.style.padding = "6px 10px";
-      hud.style.border = "1px solid #ccc";
-      hud.style.borderRadius = "8px";
-      hud.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif";
-      hud.style.fontSize = "14px";
-      const scoreSpan = document.createElement("span");
-      scoreSpan.innerHTML = `Score: <strong id="scoreValue">0</strong>`;
-      const streakSpan = document.createElement("span");
-      streakSpan.innerHTML = `Streak: <strong id="streakValue">0</strong>`;
-      hud.appendChild(scoreSpan);
-      hud.appendChild(streakSpan);
+      hud.className = "hud-bar";
+      hud.innerHTML = `
+        <span>Score: <strong id="scoreValue">0</strong></span>
+        <span>Streak: <strong id="streakValue">0</strong></span>
+      `;
     }
     const target =
       deckEl?.parentElement ||
@@ -39,36 +35,101 @@ window.addEventListener("DOMContentLoaded", () => {
       document.body;
 
     if (!hud.isConnected) {
-      // Score-HUD ganz nach oben setzen, dann Restart-Button, dann Deck
       target.insertBefore(hud, target.firstChild);
     }
     updateScoreHud();
     return hud;
   }
 
-  function updateScoreHud() {      // NEW
+  function updateScoreHud() {
     const s = document.getElementById("scoreValue");
     const st = document.getElementById("streakValue");
     if (s) s.textContent = String(score);
     if (st) st.textContent = String(streak);
   }
 
-  function adjustScore(delta /* number */, reason = "") { // NEW
+  function adjustScore(delta) {
     score += delta;
-    if (score < 0) score = 0; // kein negativer Gesamtscore
+    if (score < 0) score = 0;
     updateScoreHud();
   }
 
-  // Diamond/Peak Layout
+  // ---------- Tutorial ----------
+  function ensureTutorialButton() {
+    let btn = document.getElementById("tutorialBtn");
+    if (!btn) {
+      btn = document.createElement("button");
+      btn.id = "tutorialBtn";
+      btn.type = "button";
+      btn.textContent = "Tutorial";
+      btn.className = "ui-button";
+      btn.onclick = toggleTutorial;
+    }
+    const target =
+      document.querySelector(".hud-right") ||
+      document.getElementById("scoreHud")?.parentElement ||
+      document.querySelector(".deck-area") ||
+      document.body;
+
+    if (!btn.isConnected) {
+      // Wenn eine HUD-Zeile existiert, hänge rechts an; sonst vor das Deck
+      const hudRight = document.querySelector(".hud-right");
+      if (hudRight) {
+        hudRight.appendChild(btn);
+      } else if (deckEl && deckEl.parentElement === target) {
+        target.insertBefore(btn, deckEl);
+      } else {
+        target.insertBefore(btn, target.firstChild);
+      }
+    }
+    return btn;
+  }
+
+  function ensureTutorialOverlay() {
+    let overlay = document.getElementById("tutorialOverlay");
+    if (!overlay) {
+      overlay = document.createElement("div");
+      overlay.id = "tutorialOverlay";
+      overlay.className = "tutorial-overlay hidden";
+      overlay.innerHTML = `
+        <div class="tutorial-card">
+          <h2>Wie spielt man Eleven?</h2>
+          <ul>
+            <li>Wähle offene Karten, deren Summe <strong>11</strong> ergibt.</li>
+            <li>Nutze die oberste Karte vom <strong>Waste</strong> als zusätzliche Option.</li>
+            <li>Gedeckte Karten (grau) werden erst spielbar, wenn darunterliegende Karten entfernt sind.</li>
+            <li>Jede erfolgreiche 11‑Kombi erhöht deine <strong>Streak</strong> (+Bonus).</li>
+            <li><strong>Falsche Kombination &gt; 11</strong> gibt Minuspunkte und wird automatisch aufgehoben.</li>
+            <li>Leere einen kompletten Peak für einen <strong>Peak‑Bonus</strong>.</li>
+            <li>Ist das Feld komplett geleert, gibt es einen <strong>Win‑Bonus</strong>.</li>
+          </ul>
+          <button id="tutorialClose" class="ui-button">Schließen</button>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+      overlay.querySelector("#tutorialClose").addEventListener("click", toggleTutorial);
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) toggleTutorial();
+      });
+    }
+    return overlay;
+  }
+
+  function toggleTutorial() {
+    const overlay = ensureTutorialOverlay();
+    overlay.classList.toggle("hidden");
+  }
+
+  // ---------- Diamond/Peak Layout ----------
   const rowsPerDiamond = [1, 2, 3, 2, 1];
   const NUM_DIAMONDS = 3;
 
   // Kartenwerte / Stapel
   const cardValues = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
-  let stock = Array.from({ length: 24 }, () => getRandomCardValue()); // CHANGED (let, da Reset)
+  let stock = Array.from({ length: 24 }, () => getRandomCardValue());
   const wasteStack = []; // DOM-Elemente der Waste-Karten (oberste = last)
 
-  let gameOver = false;                                         // NEW
+  let gameOver = false;
 
   function getRandomCardValue() {
     return cardValues[Math.floor(Math.random() * cardValues.length)];
@@ -83,8 +144,7 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   /**
-   * Korrektes Kind-Mapping für TriPeaks-Diamant [1,2,3,2,1]:
-   * Eine Karte ist "covered", solange MINDESTENS eines ihrer Kinder (in der nächsten Row darunter) noch liegt.
+   * Mapping Eltern → Kinder für TriPeaks-Diamant [1,2,3,2,1]
    */
   function childrenIndicesTripeaks(curLen, nextLen, c) {
     if (nextLen === 1) return [0];
@@ -194,7 +254,7 @@ window.addEventListener("DOMContentLoaded", () => {
       card.classList.toggle("clickable", clickable);
     });
 
-    if (stock.length === 0) maybeTriggerLoss();              // NEW
+    if (stock.length === 0) maybeTriggerLoss();
   }
 
   // ---------- Delegierter Klick-Handler ----------
@@ -274,11 +334,11 @@ window.addEventListener("DOMContentLoaded", () => {
 
         updateCoverageState();
 
-        if (wasteStack.length === 0) {           // NEW
+        if (wasteStack.length === 0) {
           ensureWasteCard();
         }
 
-        if (stock.length === 0) maybeTriggerLoss();          // NEW
+        if (stock.length === 0) maybeTriggerLoss();
 
         return true; // exakt 1 Slot
       }
@@ -305,7 +365,7 @@ window.addEventListener("DOMContentLoaded", () => {
   // ---------- Ziehen vom Deck ----------
   function drawCard(initial = false) {
     if (!initial) {
-      // Das Ziehen gilt als "Unterbrechung" einer Streak
+      // Ziehen unterbricht die Streak, aber KEIN Penalty mehr
       if (streak > 0) {
         streak = 0;
         updateScoreHud();
@@ -323,11 +383,6 @@ window.addEventListener("DOMContentLoaded", () => {
 
     pushWasteCardWithValue(newCardValue, "stock");
 
-    // Zug-Penalty nur bei echten Deck-Zügen (nicht initial)
-    if (!initial) {
-      adjustScore(DRAW_PENALTY, "draw");
-    }
-
     if (stock.length === 0) maybeTriggerLoss();
   }
 
@@ -336,7 +391,7 @@ window.addEventListener("DOMContentLoaded", () => {
     drawCard();
   });
 
-  // ---------- Kombination prüfen (mit "Waste nie leer" Fix) + SCORE ----------
+  // ---------- Kombination prüfen + Scoring ----------
   function checkSelectedCards() {
     const selectedCards = Array.from(document.querySelectorAll(".card.selected"));
     if (selectedCards.length === 0) return;
@@ -345,11 +400,19 @@ window.addEventListener("DOMContentLoaded", () => {
       .map(el => getCardNumericValue(el.textContent))
       .reduce((a, b) => a + b, 0);
 
+    // FALSCHE KOMBI: Summe > 11 => Penalty + Auswahl löschen
+    if (total > 11) {
+      adjustScore(WRONG_COMBO_PENALTY);
+      // Auswahl zurücksetzen
+      selectedCards.forEach(el => el.classList.remove("selected"));
+      return;
+    }
+
+    // Nur ausführen, wenn exakt 11
     if (total !== 11) return;
 
-    // ---- SCORING: vor dem Entfernen analysieren ----
+    // Scoring: Basispunkte + Feldkarten-Bonus + Streak-Bonus (Multiplikator fix/linear)
     const fieldCount = selectedCards.filter(el => el.classList.contains("field")).length;
-    // wasteCount wäre ggf.: const wasteCount = selectedCards.filter(el => el.classList.contains("waste-card")).length;
     const basePoints = 10 + (2 * fieldCount);
     const streakBonus = 2 * streak;
     const movePoints = basePoints + streakBonus;
@@ -372,9 +435,12 @@ window.addEventListener("DOMContentLoaded", () => {
     });
 
     // Punkte gutschreiben & Streak erhöhen
-    adjustScore(movePoints, "combo");
+    adjustScore(movePoints);
     streak += 1;
     updateScoreHud();
+
+    // Peak-Clear prüfen (kein Row-Clear)
+    checkAndAwardPeakBonuses();
 
     updateCoverageState();
     checkWinCondition();
@@ -385,17 +451,35 @@ window.addEventListener("DOMContentLoaded", () => {
     if (stock.length === 0) maybeTriggerLoss();
   }
 
-  // ---------- Win Condition ----------
+  function checkAndAwardPeakBonuses() {
+    for (let d = 0; d < NUM_DIAMONDS; d++) {
+      if (clearedPeaks.has(d)) continue;
+      const remainingInPeak = document.querySelectorAll(`.card.field[data-diamond="${d}"]:not(.removed)`);
+      if (remainingInPeak.length === 0) {
+        clearedPeaks.add(d);
+        adjustScore(PEAK_CLEAR_BONUS);
+        flashBadge(`Peak +${PEAK_CLEAR_BONUS}`);
+      }
+    }
+  }
+
+  function flashBadge(text) {
+    const badge = document.createElement("div");
+    badge.className = "score-badge";
+    badge.textContent = text;
+    document.body.appendChild(badge);
+    setTimeout(() => badge.remove(), 1200);
+  }
+
+  // ---------- Win/Lose ----------
   function checkWinCondition() {
     const remainingField = document.querySelectorAll(".card.field:not(.removed)");
     if (remainingField.length === 0) {
-      // Win-Bonus
-      adjustScore(WIN_BONUS, "win");
+      adjustScore(WIN_BONUS);
       showWinMessage();
     }
   }
 
-  // ---------- Loss-Check ----------
   function getPlayableFieldValues() {
     const cards = Array.from(document.querySelectorAll(".card.field"))
       .filter(el => !el.classList.contains("removed") && !el.classList.contains("covered"));
@@ -410,22 +494,19 @@ window.addEventListener("DOMContentLoaded", () => {
 
   function existsAnyElevenCombo() {
     const vals = getPlayableFieldValues();
-    // 1) Pair/Mehrfach innerhalb der Feldkarten
+    // Paare
     for (let i = 0; i < vals.length; i++) {
       for (let j = i + 1; j < vals.length; j++) {
         if (vals[i] + vals[j] === 11) return true;
       }
     }
-    // 2) Waste-Top + irgendeine Feldkarte
+    // Waste-Top + Feld
     const wasteTop = getTopWasteValueOrNull();
     if (wasteTop != null) {
       for (const v of vals) {
         if (wasteTop + v === 11) return true;
       }
     }
-    // 3) (Optional) Mehrfach-Kombis >2 Karten — heuristische Prüfung:
-    //    Wenn mind. drei Karten vorhanden sind, ist es komplizierter exakt zu prüfen.
-    //    Wir belassen es bei den häufigsten Fällen (oben).
     return false;
   }
 
@@ -436,21 +517,15 @@ window.addEventListener("DOMContentLoaded", () => {
     showLoseMessage();
   }
 
-  // ---------- Restart-Button & Messages ----------
-  function ensureRestartButton() {                                     // NEW
+  // ---------- Restart & Messages ----------
+  function ensureRestartButton() {
     let btn = document.getElementById("restartBtn");
     if (!btn) {
       btn = document.createElement("button");
       btn.id = "restartBtn";
       btn.type = "button";
       btn.textContent = "Restart";
-      // Inline-Minimalstil, falls kein CSS vorhanden:
-      btn.style.marginBottom = "10px";
-      btn.style.marginLeft = "10px";
-      btn.style.padding = "8px 14px";
-      btn.style.borderRadius = "8px";
-      btn.style.border = "1px solid #ccc";
-      btn.style.cursor = "pointer";
+      btn.className = "ui-button";
     }
     const target =
       deckEl?.parentElement ||
@@ -459,7 +534,6 @@ window.addEventListener("DOMContentLoaded", () => {
       document.body;
 
     if (!btn.isConnected) {
-      // Nach Score-HUD einfügen, falls vorhanden
       const hud = document.getElementById("scoreHud");
       if (hud && target.contains(hud)) {
         target.insertBefore(btn, hud.nextSibling);
@@ -497,9 +571,9 @@ window.addEventListener("DOMContentLoaded", () => {
 
   function restartGame() {
     gameOver = false;
-    // Score/State reset
     score = 0;
     streak = 0;
+    clearedPeaks.clear();
     updateScoreHud();
 
     document.querySelectorAll(".win-message").forEach(el => el.remove());
@@ -514,18 +588,19 @@ window.addEventListener("DOMContentLoaded", () => {
       peakRow.appendChild(createDiamond(d));
     }
     updateCoverageState();
-    drawCard(true);      // kein Draw-Penalty
+    drawCard(true); // kein Penalty, Streak bleibt 0
     ensureWasteCard();
   }
 
   // ---------- Initiales Setup ----------
-  ensureScoreHud();                                             // NEW (Score-HUD sicher anlegen)
-  ensureRestartButton();                                        // NEW
+  ensureScoreHud();
+  ensureRestartButton();
+  ensureTutorialButton();
   for (let d = 0; d < NUM_DIAMONDS; d++) {
     peakRow.appendChild(createDiamond(d));
   }
   updateCoverageState();
-  drawCard(true); // initialer Flip: keine Strafe
+  drawCard(true);
   if (wasteStack.length === 0) ensureWasteCard();
   window.addEventListener("resize", updateCoverageState);
 });
