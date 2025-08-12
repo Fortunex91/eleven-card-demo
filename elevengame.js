@@ -2,60 +2,51 @@ window.addEventListener("DOMContentLoaded", () => {
   const peakRow = document.getElementById("peakRow");
   const deckEl = document.getElementById("deck");
   const wasteEl = document.getElementById("waste");
-  const stockCount = document.getElementById("stockCount");
+  const stockCountEl = document.getElementById("stockCount");
   let restartBtn = document.getElementById("restartBtn");
 
-  // ---------- Score/HUD ----------
+  // ---------- Globals / State ----------
+  const rowsPerDiamond = [1, 2, 3, 2, 1];
+  const NUM_DIAMONDS = 3;
+  const cardValues = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
+  let stock = [];                // wird unten über generateBiasedStock() befüllt
+  const wasteStack = [];         // Array von .waste-card DOM-Elementen (Stack)
+  let gameOver = false;
+
+  // Score/Streak & Boni
   let score = 0;
   let streak = 0;
-
-  // Scoring-Konstanten – frei anpassbar:
-  const WRONG_COMBO_PENALTY = -5;   // Minuspunkte bei falscher Kombi (>11)
-  const PEAK_CLEAR_BONUS = 50;      // Bonus pro komplett geleertem Peak
-  const WIN_BONUS = 100;            // Bonus, wenn das gesamte Feld leer ist
-
-  // Für Peak-Clear-Erkennung
+  const WRONG_COMBO_PENALTY = -5;   // falsche Kombi (> 11)
+  const PEAK_CLEAR_BONUS = 50;
+  const WIN_BONUS = 100;
   const clearedPeaks = new Set();
 
-  function ensureScoreHud() {
-    let hud = document.getElementById("scoreHud");
-    if (!hud) {
-      hud = document.createElement("div");
-      hud.id = "scoreHud";
-      hud.className = "hud-bar";
-      hud.innerHTML = `
-        <span>Score: <strong id="scoreValue">0</strong></span>
-        <span>Streak: <strong id="streakValue">0</strong></span>
-      `;
+  // ---------- Utils ----------
+  function getRandomCardValue() {
+    return cardValues[Math.floor(Math.random() * cardValues.length)];
+  }
+  function getCardNumericValue(cardText) {
+    return cardText === "A" ? 1 : parseInt(cardText, 10);
+  }
+  function complementFor(v) {
+    return 11 - v;
+  }
+
+  // ---------- UI: Top-Bar (Tutorial + Restart) ----------
+  function ensureTopBar() {
+    let topbar = document.getElementById("topBar");
+    if (!topbar) {
+      topbar = document.createElement("div");
+      topbar.id = "topBar";
+      topbar.className = "top-bar";
+      // Buttons werden separat erzeugt
+      document.body.appendChild(topbar);
     }
-    const target =
-      deckEl?.parentElement ||
-      document.querySelector(".deck-area") ||
-      document.querySelector(".game-container") ||
-      document.body;
-
-    if (!hud.isConnected) {
-      target.insertBefore(hud, target.firstChild);
-    }
-    updateScoreHud();
-    return hud;
+    return topbar;
   }
 
-  function updateScoreHud() {
-    const s = document.getElementById("scoreValue");
-    const st = document.getElementById("streakValue");
-    if (s) s.textContent = String(score);
-    if (st) st.textContent = String(streak);
-  }
-
-  function adjustScore(delta) {
-    score += delta;
-    if (score < 0) score = 0;
-    updateScoreHud();
-  }
-
-  // ---------- Tutorial ----------
   function ensureTutorialButton() {
+    const bar = ensureTopBar();
     let btn = document.getElementById("tutorialBtn");
     if (!btn) {
       btn = document.createElement("button");
@@ -63,28 +54,63 @@ window.addEventListener("DOMContentLoaded", () => {
       btn.type = "button";
       btn.textContent = "Tutorial";
       btn.className = "ui-button";
-      btn.onclick = toggleTutorial;
-    }
-    const target =
-      document.querySelector(".hud-right") ||
-      document.getElementById("scoreHud")?.parentElement ||
-      document.querySelector(".deck-area") ||
-      document.body;
-
-    if (!btn.isConnected) {
-      // Wenn eine HUD-Zeile existiert, hänge rechts an; sonst vor das Deck
-      const hudRight = document.querySelector(".hud-right");
-      if (hudRight) {
-        hudRight.appendChild(btn);
-      } else if (deckEl && deckEl.parentElement === target) {
-        target.insertBefore(btn, deckEl);
-      } else {
-        target.insertBefore(btn, target.firstChild);
-      }
+      btn.addEventListener("click", toggleTutorial);
+      bar.appendChild(btn);
     }
     return btn;
   }
 
+  function ensureRestartButton() {
+    const bar = ensureTopBar();
+    let btn = document.getElementById("restartBtn");
+    if (!btn) {
+      btn = document.createElement("button");
+      btn.id = "restartBtn";
+      btn.type = "button";
+      btn.textContent = "Restart";
+      btn.className = "ui-button";
+      btn.addEventListener("click", restartGame);
+      bar.appendChild(btn);
+    } else if (!btn.isConnected) {
+      bar.appendChild(btn);
+    }
+    return btn;
+  }
+
+  // ---------- Score HUD: zentriert über mittlerem Peak ----------
+  function ensureScoreHud() {
+    let hud = document.getElementById("scoreHud");
+    if (!hud) {
+      hud = document.createElement("div");
+      hud.id = "scoreHud";
+      hud.className = "score-hud";
+      hud.innerHTML = `
+        <span>Score: <strong id="scoreValue">0</strong></span>
+        <span>Streak: <strong id="streakValue">0</strong></span>
+      `;
+      // Score HUD über dem mittleren Peak (peakRow ist unsere Referenz)
+      if (peakRow && peakRow.parentElement) {
+        peakRow.parentElement.appendChild(hud);
+      } else {
+        document.body.appendChild(hud);
+      }
+    }
+    updateScoreHud();
+    return hud;
+  }
+  function updateScoreHud() {
+    const s = document.getElementById("scoreValue");
+    const st = document.getElementById("streakValue");
+    if (s) s.textContent = String(score);
+    if (st) st.textContent = String(streak);
+  }
+  function adjustScore(delta) {
+    score += delta;
+    if (score < 0) score = 0;
+    updateScoreHud();
+  }
+
+  // ---------- Tutorial Overlay (EN) ----------
   function ensureTutorialOverlay() {
     let overlay = document.getElementById("tutorialOverlay");
     if (!overlay) {
@@ -93,17 +119,17 @@ window.addEventListener("DOMContentLoaded", () => {
       overlay.className = "tutorial-overlay hidden";
       overlay.innerHTML = `
         <div class="tutorial-card">
-          <h2>Wie spielt man Eleven?</h2>
+          <h2>How to play Eleven</h2>
           <ul>
-            <li>Wähle offene Karten, deren Summe <strong>11</strong> ergibt.</li>
-            <li>Nutze die oberste Karte vom <strong>Waste</strong> als zusätzliche Option.</li>
-            <li>Gedeckte Karten (grau) werden erst spielbar, wenn darunterliegende Karten entfernt sind.</li>
-            <li>Jede erfolgreiche 11‑Kombi erhöht deine <strong>Streak</strong> (+Bonus).</li>
-            <li><strong>Falsche Kombination &gt; 11</strong> gibt Minuspunkte und wird automatisch aufgehoben.</li>
-            <li>Leere einen kompletten Peak für einen <strong>Peak‑Bonus</strong>.</li>
-            <li>Ist das Feld komplett geleert, gibt es einen <strong>Win‑Bonus</strong>.</li>
+            <li>Select open cards that sum exactly to <strong>11</strong>.</li>
+            <li>You can also use the top card from the <strong>waste</strong>.</li>
+            <li>Greyed cards are covered and cannot be selected until their children are removed.</li>
+            <li>Each successful 11 increases your <strong>streak</strong> (more points).</li>
+            <li><strong>Wrong selection &gt; 11</strong> deducts points and is auto‑cleared.</li>
+            <li>Clear an entire peak to get a <strong>Peak Bonus</strong>.</li>
+            <li>Clear the entire board for a <strong>Win Bonus</strong>.</li>
           </ul>
-          <button id="tutorialClose" class="ui-button">Schließen</button>
+          <button id="tutorialClose" class="ui-button">Close</button>
         </div>
       `;
       document.body.appendChild(overlay);
@@ -114,38 +140,38 @@ window.addEventListener("DOMContentLoaded", () => {
     }
     return overlay;
   }
-
   function toggleTutorial() {
-    const overlay = ensureTutorialOverlay();
-    overlay.classList.toggle("hidden");
+    const ov = ensureTutorialOverlay();
+    ov.classList.toggle("hidden");
   }
 
-  // ---------- Diamond/Peak Layout ----------
-  const rowsPerDiamond = [1, 2, 3, 2, 1];
-  const NUM_DIAMONDS = 3;
-
-  // Kartenwerte / Stapel
-  const cardValues = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
-  let stock = Array.from({ length: 24 }, () => getRandomCardValue());
-  const wasteStack = []; // DOM-Elemente der Waste-Karten (oberste = last)
-
-  let gameOver = false;
-
-  function getRandomCardValue() {
-    return cardValues[Math.floor(Math.random() * cardValues.length)];
+  // ---------- Stock Count unter dem Deck ----------
+  function ensureStockWrapAndLabel() {
+    // Erzeuge einen Wrapper, damit die Zahl sicher UNTER dem Deck angezeigt wird
+    let wrap = deckEl.closest(".deck-wrap");
+    if (!wrap) {
+      wrap = document.createElement("div");
+      wrap.className = "deck-wrap";
+      const parent = deckEl.parentElement || document.querySelector(".deck-area") || document.body;
+      parent.insertBefore(wrap, deckEl);
+      wrap.appendChild(deckEl);
+    }
+    let label = document.getElementById("stockCount");
+    if (!label) {
+      // Falls es kein Element gab, neu anlegen
+      const lbl = document.createElement("div");
+      lbl.id = "stockCount";
+      wrap.appendChild(lbl);
+    } else if (label.parentElement !== wrap) {
+      wrap.appendChild(label);
+    }
   }
-  function getCardNumericValue(cardText) {
-    return cardText === "A" ? 1 : parseInt(cardText, 10);
-  }
 
-  // ---------- Hilfen: IDs & Mapping ----------
+  // ---------- Mapping & Layout ----------
   function makeCardId(d, r, c) {
     return `card-d${d}-r${r}-c${c}`;
   }
 
-  /**
-   * Mapping Eltern → Kinder für TriPeaks-Diamant [1,2,3,2,1]
-   */
   function childrenIndicesTripeaks(curLen, nextLen, c) {
     if (nextLen === 1) return [0];
     if (curLen === 1) {
@@ -166,7 +192,6 @@ window.addEventListener("DOMContentLoaded", () => {
     return [Math.max(0, Math.min(nextLen - 1, x))];
   }
 
-  // ---------- Peak erzeugen, data-children setzen ----------
   function createDiamond(diamondIndex) {
     const peak = document.createElement("div");
     peak.classList.add("peak");
@@ -200,7 +225,7 @@ window.addEventListener("DOMContentLoaded", () => {
       cardMatrix.push(rowCards);
     });
 
-    // Eltern → Kinder (darunterliegende Row) mappen
+    // Eltern → Kinder mappen
     for (let r = 0; r < cardMatrix.length - 1; r++) {
       const curRow = cardMatrix[r];
       const nextRow = cardMatrix[r + 1];
@@ -216,11 +241,10 @@ window.addEventListener("DOMContentLoaded", () => {
         }
       }
     }
-
     return peak;
   }
 
-  // ---------- Coverage-Logik ----------
+  // ---------- Coverage ----------
   function isCardCovered(cardEl) {
     if (!cardEl || cardEl.classList.contains("removed")) return false;
 
@@ -252,12 +276,13 @@ window.addEventListener("DOMContentLoaded", () => {
       card.classList.toggle("covered", covered);
       const clickable = !covered && !card.classList.contains("removed");
       card.classList.toggle("clickable", clickable);
+      card.classList.toggle("unselectable", !clickable); // nur visuelles Grau
     });
 
     if (stock.length === 0) maybeTriggerLoss();
   }
 
-  // ---------- Delegierter Klick-Handler ----------
+  // ---------- Click Handling ----------
   document.addEventListener("click", (ev) => {
     if (gameOver) return;
 
@@ -298,7 +323,7 @@ window.addEventListener("DOMContentLoaded", () => {
     el.addEventListener("animationend", off);
   }
 
-  // ---------- Refill: exakt 1 Feld-Slot pro Zug (row-basiert, L→R) ----------
+  // ---------- Refill (genau 1 Slot/Zug; row-basiert L→R) ----------
   function refillOneRemovedSlot() {
     const removedSlots = Array.from(document.querySelectorAll(".card.field.removed"));
     if (removedSlots.length === 0) return false;
@@ -328,44 +353,57 @@ window.addEventListener("DOMContentLoaded", () => {
           wasteEl.removeChild(prevCardEl);
         }
 
-        slot.classList.remove("removed", "selected", "covered");
+        slot.classList.remove("removed", "selected", "covered", "unselectable");
         slot.textContent = prevCardEl?.textContent || getRandomCardValue();
         slot.style.visibility = "visible";
 
         updateCoverageState();
 
-        if (wasteStack.length === 0) {
-          ensureWasteCard();
-        }
+        if (wasteStack.length === 0) ensureWasteCard();
 
         if (stock.length === 0) maybeTriggerLoss();
-
-        return true; // exakt 1 Slot
+        return true; // genau 1
       }
     }
     return false;
   }
 
-  // ---------- Waste-Helpers ----------
+  // ---------- Waste Helpers (Flip/Deal Animation) ----------
   function pushWasteCardWithValue(value, source = "stock") {
     const newCard = document.createElement("div");
-    newCard.classList.add("waste-card", "card", "clickable");
+    newCard.classList.add("waste-card", "card", "clickable", "deal-anim", "flip-anim");
     newCard.textContent = value;
     newCard.dataset.source = source; // "stock" | "synthetic"
     newCard.style.zIndex = String(wasteStack.length);
     wasteEl.appendChild(newCard);
+    // Ende der Animationen Klassen wieder entfernen
+    newCard.addEventListener("animationend", () => {
+      newCard.classList.remove("deal-anim");
+      newCard.classList.remove("flip-anim");
+    }, { once: true });
     wasteStack.push(newCard);
   }
 
   function ensureWasteCard() {
     if (wasteStack.length > 0) return;
-    pushWasteCardWithValue(getRandomCardValue(), "synthetic");
+    // Synthetische Karte: 70% Chance, ein Komplement zu einer spielbaren Karte zu liefern
+    const playable = getPlayableFieldValuesWithIds();
+    let value;
+    if (playable.length > 0 && Math.random() < 0.7) {
+      const pick = playable[Math.floor(Math.random() * playable.length)];
+      value = complementFor(pick.v);
+      value = Math.min(10, Math.max(1, value));
+      value = value === 1 ? "A" : String(value);
+    } else {
+      value = getRandomCardValue();
+    }
+    pushWasteCardWithValue(value, "synthetic");
   }
 
-  // ---------- Ziehen vom Deck ----------
+  // ---------- Draw vom Deck ----------
   function drawCard(initial = false) {
     if (!initial) {
-      // Ziehen unterbricht die Streak, aber KEIN Penalty mehr
+      // Ziehen unterbricht Streak, aber KEINE Penalty
       if (streak > 0) {
         streak = 0;
         updateScoreHud();
@@ -379,13 +417,14 @@ window.addEventListener("DOMContentLoaded", () => {
     }
 
     const newCardValue = stock.pop();
-    stockCount.textContent = stock.length;
-
+    updateStockCount();
+    // Flip/Deal-Animation in pushWasteCardWithValue
     pushWasteCardWithValue(newCardValue, "stock");
 
     if (stock.length === 0) maybeTriggerLoss();
   }
 
+  // Klick auf Deck
   deckEl.addEventListener("click", () => {
     if (gameOver) return;
     drawCard();
@@ -400,29 +439,27 @@ window.addEventListener("DOMContentLoaded", () => {
       .map(el => getCardNumericValue(el.textContent))
       .reduce((a, b) => a + b, 0);
 
-    // FALSCHE KOMBI: Summe > 11 => Penalty + Auswahl löschen
+    // Falsche Kombi: > 11 => Penalty + Auto-Deselect
     if (total > 11) {
       adjustScore(WRONG_COMBO_PENALTY);
-      // Auswahl zurücksetzen
       selectedCards.forEach(el => el.classList.remove("selected"));
       return;
     }
 
-    // Nur ausführen, wenn exakt 11
     if (total !== 11) return;
 
-    // Scoring: Basispunkte + Feldkarten-Bonus + Streak-Bonus (Multiplikator fix/linear)
+    // Punkte berechnen: Grund + Feldkarten + Streak-Bonus
     const fieldCount = selectedCards.filter(el => el.classList.contains("field")).length;
     const basePoints = 10 + (2 * fieldCount);
     const streakBonus = 2 * streak;
     const movePoints = basePoints + streakBonus;
 
-    // Entfernen / Anwenden des Zugs
+    // Entfernen / Anwenden
     selectedCards.forEach(card => {
       card.classList.remove("selected");
 
       if (card.classList.contains("field")) {
-        card.classList.remove("clickable");
+        card.classList.remove("clickable", "unselectable");
         card.classList.add("removed");
         card.style.visibility = "hidden";
       } else if (card.classList.contains("waste-card")) {
@@ -434,12 +471,12 @@ window.addEventListener("DOMContentLoaded", () => {
       }
     });
 
-    // Punkte gutschreiben & Streak erhöhen
+    // Punkte + Streak
     adjustScore(movePoints);
     streak += 1;
     updateScoreHud();
 
-    // Peak-Clear prüfen (kein Row-Clear)
+    // Peak Bonus prüfen
     checkAndAwardPeakBonuses();
 
     updateCoverageState();
@@ -486,6 +523,12 @@ window.addEventListener("DOMContentLoaded", () => {
     return cards.map(el => getCardNumericValue(el.textContent));
   }
 
+  function getPlayableFieldValuesWithIds() {
+    const cards = Array.from(document.querySelectorAll(".card.field"))
+      .filter(el => !el.classList.contains("removed") && !el.classList.contains("covered"));
+    return cards.map(el => ({ v: getCardNumericValue(el.textContent), id: el.id }));
+  }
+
   function getTopWasteValueOrNull() {
     if (wasteStack.length === 0) return null;
     const top = wasteStack[wasteStack.length - 1];
@@ -517,36 +560,6 @@ window.addEventListener("DOMContentLoaded", () => {
     showLoseMessage();
   }
 
-  // ---------- Restart & Messages ----------
-  function ensureRestartButton() {
-    let btn = document.getElementById("restartBtn");
-    if (!btn) {
-      btn = document.createElement("button");
-      btn.id = "restartBtn";
-      btn.type = "button";
-      btn.textContent = "Restart";
-      btn.className = "ui-button";
-    }
-    const target =
-      deckEl?.parentElement ||
-      document.querySelector(".deck-area") ||
-      document.querySelector(".game-container") ||
-      document.body;
-
-    if (!btn.isConnected) {
-      const hud = document.getElementById("scoreHud");
-      if (hud && target.contains(hud)) {
-        target.insertBefore(btn, hud.nextSibling);
-      } else if (deckEl && deckEl.parentElement === target) {
-        target.insertBefore(btn, deckEl);
-      } else {
-        target.insertBefore(btn, target.firstChild);
-      }
-    }
-    btn.onclick = restartGame;
-    return btn;
-  }
-
   function showWinMessage() {
     if (gameOver) return;
     gameOver = true;
@@ -569,6 +582,48 @@ window.addEventListener("DOMContentLoaded", () => {
     document.body.appendChild(message);
   }
 
+  // ---------- Deck/Stock: Komplement-Bias ----------
+  // Idee:
+  // 1) Feldkarten erstmal zufällig verteilen (wie bisher).
+  // 2) Stock so generieren, dass Komplementzahlen zu den (aktuellen) Feldwerten
+  //    stärker gewichtet sind (70% aus Komplement-Pool, 30% reiner Zufall).
+  function generateBiasedStock(size) {
+    const allFieldCards = Array.from(document.querySelectorAll(".card.field"));
+    const fieldVals = allFieldCards.map(el => getCardNumericValue(el.textContent));
+    // Komplement-Pool aufbauen (Gewicht je nach Häufigkeit im Feld)
+    const pool = [];
+    const freq = {};
+    fieldVals.forEach(v => { freq[v] = (freq[v] || 0) + 1; });
+    Object.keys(freq).forEach(k => {
+      const v = parseInt(k, 10);
+      const comp = complementFor(v);
+      const weight = Math.max(1, Math.min(6, freq[v] + 2)); // Deckelung, aber Komplement wird bevorzugt
+      for (let i = 0; i < weight; i++) {
+        pool.push(comp);
+      }
+    });
+
+    const result = [];
+    for (let i = 0; i < size; i++) {
+      let pickNum;
+      if (pool.length > 0 && Math.random() < 0.7) {
+        pickNum = pool[Math.floor(Math.random() * pool.length)];
+      } else {
+        // Zufall, aber 1..10
+        pickNum = Math.floor(Math.random() * 10) + 1;
+      }
+      const val = pickNum === 1 ? "A" : String(pickNum);
+      result.push(val);
+    }
+    return result;
+  }
+
+  // ---------- Restart / Init ----------
+  function updateStockCount() {
+    const el = document.getElementById("stockCount");
+    if (el) el.textContent = String(stock.length);
+  }
+
   function restartGame() {
     gameOver = false;
     score = 0;
@@ -581,26 +636,40 @@ window.addEventListener("DOMContentLoaded", () => {
     while (wasteEl.firstChild) wasteEl.removeChild(wasteEl.firstChild);
     while (peakRow.firstChild) peakRow.removeChild(peakRow.firstChild);
 
-    stock = Array.from({ length: 24 }, () => getRandomCardValue());
-    stockCount.textContent = stock.length;
-
+    // Peaks erstellen (Feld zufällig)
     for (let d = 0; d < NUM_DIAMONDS; d++) {
       peakRow.appendChild(createDiamond(d));
     }
+
+    // Coverage einmal setzen, dann Stock mit Bias generieren
     updateCoverageState();
-    drawCard(true); // kein Penalty, Streak bleibt 0
+    stock = generateBiasedStock(24);
+    updateStockCount();
+
+    // Initial eine Waste-Karte ziehen (Flip/Deal)
+    drawCard(true);
     ensureWasteCard();
   }
 
-  // ---------- Initiales Setup ----------
-  ensureScoreHud();
-  ensureRestartButton();
+  // ---------- Initial Setup ----------
+  ensureTopBar();
   ensureTutorialButton();
+  ensureRestartButton();
+  ensureScoreHud();
+  ensureStockWrapAndLabel();
+
   for (let d = 0; d < NUM_DIAMONDS; d++) {
     peakRow.appendChild(createDiamond(d));
   }
   updateCoverageState();
+
+  // Stock initial mit Bias erzeugen
+  stock = generateBiasedStock(24);
+  updateStockCount();
+
+  // erste Karte auf Waste (Flip)
   drawCard(true);
   if (wasteStack.length === 0) ensureWasteCard();
+
   window.addEventListener("resize", updateCoverageState);
 });
