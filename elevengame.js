@@ -16,7 +16,7 @@ window.addEventListener("DOMContentLoaded", () => {
   // Score/Streak & Boni
   let score = 0;
   let streak = 0;
-  const WRONG_COMBO_PENALTY = -5;   // falsche Kombi (> 11)
+  const WRONG_COMBO_PENALTY = -5;
   const PEAK_CLEAR_BONUS = 50;
   const WIN_BONUS = 100;
   const clearedPeaks = new Set();
@@ -30,15 +30,15 @@ window.addEventListener("DOMContentLoaded", () => {
   let timeRemaining = TIME_LIMIT_MS;
 
   // ---------- Utils ----------
+  const supportsPointer = "PointerEvent" in window;
+
   function getRandomCardValue() {
     return cardValues[Math.floor(Math.random() * cardValues.length)];
   }
   function getCardNumericValue(cardText) {
     return cardText === "A" ? 1 : parseInt(cardText, 10);
   }
-  function complementFor(v) {
-    return 11 - v;
-  }
+  function complementFor(v) { return 11 - v; }
 
   // ---------- Popups + Anti-Overlap ----------
   const activePopups = []; // {el, expires}
@@ -50,8 +50,7 @@ window.addEventListener("DOMContentLoaded", () => {
     const rect = pop.getBoundingClientRect();
     pop.style.left = `${Math.round(x - rect.width / 2)}px`;
     pop.style.top  = `${Math.round(y - rect.height)}px`;
-
-    requestAnimationFrame(() => { avoidOverlap(pop); });
+    requestAnimationFrame(() => avoidOverlap(pop));
 
     const ttl = 900;
     const item = { el: pop, expires: performance.now() + ttl };
@@ -69,23 +68,20 @@ window.addEventListener("DOMContentLoaded", () => {
     const MAX_NUDGE = 90;
     const STEP = 18;
     let nudge = 0, collided = true;
-
     const rect = () => el.getBoundingClientRect();
-    function anyCollision() {
+    const anyCollision = () => {
       const r = rect();
       const others = activePopups
         .map(p => p.el)
         .filter(n => n !== el && document.body.contains(n))
         .map(n => n.getBoundingClientRect());
       return others.some(o => isOverlap(r, o));
-    }
-
+    };
     while (collided && nudge <= MAX_NUDGE) {
       collided = anyCollision();
       if (collided) {
         nudge += STEP;
-        const curTop = parseFloat(el.style.top || "0");
-        el.style.top = (curTop - STEP) + "px";
+        el.style.top = (parseFloat(el.style.top || "0") - STEP) + "px";
       }
     }
   }
@@ -133,7 +129,9 @@ window.addEventListener("DOMContentLoaded", () => {
       btn.type = "button";
       btn.textContent = "Tutorial";
       btn.className = "ui-button";
-      btn.addEventListener("click", toggleTutorial);
+      btn.addEventListener("pointerdown", (e) => { e.preventDefault(); toggleTutorial(); }, { passive: false });
+      // Fallback
+      btn.addEventListener("touchstart", (e) => { e.preventDefault(); toggleTutorial(); }, { passive: false });
       bar.appendChild(btn);
     }
     return btn;
@@ -147,7 +145,8 @@ window.addEventListener("DOMContentLoaded", () => {
       btn.type = "button";
       btn.textContent = "Restart";
       btn.className = "ui-button";
-      btn.addEventListener("click", restartGame);
+      btn.addEventListener("pointerdown", (e) => { e.preventDefault(); restartGame(); }, { passive: false });
+      btn.addEventListener("touchstart", (e) => { e.preventDefault(); restartGame(); }, { passive: false });
       bar.appendChild(btn);
     } else if (!btn.isConnected) {
       bar.appendChild(btn);
@@ -187,9 +186,19 @@ window.addEventListener("DOMContentLoaded", () => {
     updateScoreHud();
   }
 
-  // ---------- Tutorial Overlay (inkl. Timer/Bonus) ----------
+  // ---------- Tutorial Overlay (Timer/Bonus erwähnt) ----------
   function ensureTutorialOverlay() {
     let overlay = document.getElementById("tutorialOverlay");
+    const contentList = `
+      <li>Select open cards that sum exactly to <strong>11</strong>.</li>
+      <li>You can also use the top card from the <strong>waste</strong>.</li>
+      <li>Greyed cards are covered and cannot be selected until their children are removed.</li>
+      <li>Each successful 11 increases your <strong>streak</strong> and grants extra points.</li>
+      <li><strong>Wrong selection &gt; 11</strong> deducts points and is auto‑cleared.</li>
+      <li>Clear an entire peak to get a <strong>Peak Bonus</strong>.</li>
+      <li>A small <strong>time bar</strong> at the bottom counts down <strong>1:30</strong>. When it empties, you <strong>lose</strong>.</li>
+      <li>If you <strong>win before it empties</strong>, remaining time yields a <strong>Time Bonus</strong> (+${TIME_BONUS_PER_SEC}/sec) and remaining stock cards grant a <strong>Stock Bonus</strong> (+${STOCK_BONUS_PER_CARD}/card).</li>
+    `;
     if (!overlay) {
       overlay = document.createElement("div");
       overlay.id = "tutorialOverlay";
@@ -197,39 +206,22 @@ window.addEventListener("DOMContentLoaded", () => {
       overlay.innerHTML = `
         <div class="tutorial-card">
           <h2>How to play Eleven</h2>
-          <ul>
-            <li>Select open cards that sum exactly to <strong>11</strong>.</li>
-            <li>You can also use the top card from the <strong>waste</strong>.</li>
-            <li>Greyed cards are covered and cannot be selected until their children are removed.</li>
-            <li>Each successful 11 increases your <strong>streak</strong> and grants extra points.</li>
-            <li><strong>Wrong selection &gt; 11</strong> deducts points and is auto‑cleared.</li>
-            <li>Clear an entire peak to get a <strong>Peak Bonus</strong>.</li>
-            <li>There is a <strong>1:30 timer</strong> (bottom). If it reaches zero, you <strong>lose</strong>.</li>
-            <li>If you <strong>win within time</strong>, the timer pauses and you get <strong>Time Bonus</strong> (+${TIME_BONUS_PER_SEC} per remaining second) and <strong>Stock Bonus</strong> (+${STOCK_BONUS_PER_CARD} per card left in stock).</li>
-          </ul>
+          <ul>${contentList}</ul>
           <button id="tutorialClose" class="ui-button">Close</button>
         </div>
       `;
       document.body.appendChild(overlay);
-      overlay.querySelector("#tutorialClose").addEventListener("click", toggleTutorial);
-      overlay.addEventListener("click", (e) => {
-        if (e.target === overlay) toggleTutorial();
-      });
+      overlay.querySelector("#tutorialClose").addEventListener("pointerdown", (e) => { e.preventDefault(); toggleTutorial(); }, { passive: false });
+      overlay.querySelector("#tutorialClose").addEventListener("touchstart", (e) => { e.preventDefault(); toggleTutorial(); }, { passive: false });
+      overlay.addEventListener("pointerdown", (e) => {
+        if (e.target === overlay) { e.preventDefault(); toggleTutorial(); }
+      }, { passive: false });
+      overlay.addEventListener("touchstart", (e) => {
+        if (e.target === overlay) { e.preventDefault(); toggleTutorial(); }
+      }, { passive: false });
     } else {
-      // Falls bestehender Text noch alt ist, überschreiben (idempotent)
       const ul = overlay.querySelector("ul");
-      if (ul) {
-        ul.innerHTML = `
-          <li>Select open cards that sum exactly to <strong>11</strong>.</li>
-          <li>You can also use the top card from the <strong>waste</strong>.</li>
-          <li>Greyed cards are covered and cannot be selected until their children are removed.</li>
-          <li>Each successful 11 increases your <strong>streak</strong> and grants extra points.</li>
-          <li><strong>Wrong selection &gt; 11</strong> deducts points and is auto‑cleared.</li>
-          <li>Clear an entire peak to get a <strong>Peak Bonus</strong>.</li>
-          <li>There is a <strong>1:30 timer</strong> (bottom). If it reaches zero, you <strong>lose</strong>.</li>
-          <li>If you <strong>win within time</strong>, the timer pauses and you get <strong>Time Bonus</strong> (+${TIME_BONUS_PER_SEC} per remaining second) and <strong>Stock Bonus</strong> (+${STOCK_BONUS_PER_CARD} per card left in stock).</li>
-        `;
-      }
+      if (ul) ul.innerHTML = contentList;
     }
     return overlay;
   }
@@ -256,19 +248,13 @@ window.addEventListener("DOMContentLoaded", () => {
     } else if (label.parentElement !== wrap) {
       wrap.appendChild(label);
     }
-
-    // Direkt bekannte Labels ausblenden
     const stockLabel = document.getElementById("stockLabel") || document.querySelector(".stock-label");
     if (stockLabel) stockLabel.style.display = "none";
-
-    // Fallback: streunende Text-Knoten "Stock:" verstecken
     killStrayStockLabels();
   }
-
   function killStrayStockLabels() {
     const candidates = Array.from(document.querySelectorAll("div, span, p, h1, h2, h3, h4, h5"));
     for (const el of candidates) {
-      if (!el) continue;
       const txt = (el.textContent || "").trim();
       if (txt === "Stock:" || txt === "Stock :") {
         el.style.display = "none";
@@ -277,21 +263,12 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   // ---------- Mapping & Layout ----------
-  function makeCardId(d, r, c) {
-    return `card-d${d}-r${r}-c${c}`;
-  }
-
+  function makeCardId(d, r, c) { return `card-d${d}-r${r}-c${c}`; }
   function childrenIndicesTripeaks(curLen, nextLen, c) {
     if (nextLen === 1) return [0];
-    if (curLen === 1) {
-      return nextLen >= 2 ? [0, nextLen - 1] : [0];
-    }
-    if (nextLen === curLen + 1) {
-      return [c, c + 1];
-    }
-    if (nextLen === curLen) {
-      return [c];
-    }
+    if (curLen === 1) return nextLen >= 2 ? [0, nextLen - 1] : [0];
+    if (nextLen === curLen + 1) return [c, c + 1];
+    if (nextLen === curLen) return [c];
     if (nextLen === curLen - 1) {
       if (c === 0) return [0];
       if (c === curLen - 1) return [nextLen - 1];
@@ -300,54 +277,37 @@ window.addEventListener("DOMContentLoaded", () => {
     const x = Math.round(c * (nextLen - 1) / Math.max(1, (curLen - 1)));
     return [Math.max(0, Math.min(nextLen - 1, x))];
   }
-
   function createDiamond(diamondIndex) {
     const peak = document.createElement("div");
     peak.classList.add("peak");
-
     const cardHeight = 90;
     const overlap = cardHeight * 0.2;
-
     const cardMatrix = [];
     rowsPerDiamond.forEach((numCards, rowIndex) => {
       const row = document.createElement("div");
       row.classList.add("card-row");
       row.style.top = `${rowIndex * (cardHeight - overlap)}px`;
-
       const rowCards = [];
       for (let i = 0; i < numCards; i++) {
         const card = document.createElement("div");
         card.classList.add("card", "field");
         card.textContent = getRandomCardValue();
-
         card.dataset.diamond = String(diamondIndex);
         card.dataset.row = String(rowIndex);
         card.dataset.col = String(i);
-
-        const cid = makeCardId(diamondIndex, rowIndex, i);
-        card.id = cid;
-
+        card.id = makeCardId(diamondIndex, rowIndex, i);
         row.appendChild(card);
         rowCards.push(card);
       }
       peak.appendChild(row);
       cardMatrix.push(rowCards);
     });
-
-    // Eltern → Kinder mappen
     for (let r = 0; r < cardMatrix.length - 1; r++) {
-      const curRow = cardMatrix[r];
-      const nextRow = cardMatrix[r + 1];
-      const curLen = curRow.length;
-      const nextLen = nextRow.length;
-
-      for (let c = 0; c < curLen; c++) {
-        const parentCard = curRow[c];
-        const idxs = childrenIndicesTripeaks(curLen, nextLen, c);
+      const curRow = cardMatrix[r], nextRow = cardMatrix[r + 1];
+      for (let c = 0; c < curRow.length; c++) {
+        const idxs = childrenIndicesTripeaks(curRow.length, nextRow.length, c);
         const childIds = idxs.map(i => nextRow[i]?.id).filter(Boolean);
-        if (childIds.length) {
-          parentCard.dataset.children = childIds.join(",");
-        }
+        if (childIds.length) curRow[c].dataset.children = childIds.join(",");
       }
     }
     return peak;
@@ -356,142 +316,127 @@ window.addEventListener("DOMContentLoaded", () => {
   // ---------- Coverage ----------
   function isCardCovered(cardEl) {
     if (!cardEl || cardEl.classList.contains("removed")) return false;
-
-    const children = (cardEl.dataset.children || "")
-      .split(",")
-      .map(s => s.trim())
-      .filter(Boolean);
-
+    const children = (cardEl.dataset.children || "").split(",").map(s => s.trim()).filter(Boolean);
     if (children.length === 0) return false;
-
     for (const cid of children) {
       const childEl = document.getElementById(cid);
-      if (
-        childEl &&
-        childEl.isConnected &&
-        childEl.classList.contains("field") &&
-        !childEl.classList.contains("removed")
-      ) {
+      if (childEl && childEl.isConnected && childEl.classList.contains("field") && !childEl.classList.contains("removed")) {
+        return true;
+      }
+    }
+    return false;
+  }
+  function updateCoverageState() {
+    document.querySelectorAll(".card.field").forEach(card => {
+      const covered = isCardCovered(card);
+      card.classList.toggle("covered", covered);
+      const clickable = !covered && !card.classList.contains("removed");
+      card.classList.toggle("clickable", clickable);
+      card.classList.toggle("unselectable", !clickable);
+    });
+    if (stock.length === 0) maybeTriggerLoss();
+  }
+
+  // ---------- Unified Input Handling (PointerDown + TouchStart Fallback) ----------
+  function handleCardActivation(targetEl) {
+    if (!targetEl) return;
+    if (gameOver) return;
+
+    const card = targetEl.closest?.(".card");
+    if (!card) return;
+
+    if (card.classList.contains("field")) {
+      if (card.classList.contains("removed")) return;
+      if (card.classList.contains("covered")) { triggerShake(card); return; }
+      card.classList.toggle("selected");
+      checkSelectedCards();
+      return;
+    }
+    if (card.classList.contains("waste-card")) {
+      card.classList.toggle("selected");
+      checkSelectedCards();
+      return;
+    }
+  }
+
+  // Delegation auf dem gesamten Dokument – schneller als mehrere Listener
+  const pointerHandler = (ev) => {
+    // Scroll/Gesten unterbinden, damit Android nicht "schluckt"
+    ev.preventDefault();
+    const target = ev.target;
+    handleCardActivation(target);
+  };
+  const touchHandler = (ev) => {
+    ev.preventDefault();
+    const touch = ev.changedTouches ? ev.changedTouches[0] : null;
+    const target = document.elementFromPoint(
+      touch ? touch.clientX : 0,
+      touch ? touch.clientY : 0
+    ) || ev.target;
+    handleCardActivation(target);
+  };
+
+  if (supportsPointer) {
+    document.addEventListener("pointerdown", pointerHandler, { passive: false, capture: true });
+  } else {
+    document.addEventListener("touchstart", touchHandler, { passive: false, capture: true });
+  }
+
+  // Deck separat – sofort auf pointerdown reagieren
+  const deckPointer = (e) => { e.preventDefault(); if (!gameOver) drawCard(); };
+  if (supportsPointer) {
+    deckEl.addEventListener("pointerdown", deckPointer, { passive: false });
+  } else {
+    deckEl.addEventListener("touchstart", deckPointer, { passive: false });
+  }
+
+  function triggerShake(el) {
+    if (!el.classList.contains("covered") || el.classList.contains("shake")) return;
+    el.classList.add("shake");
+    const off = () => { el.classList.remove("shake"); el.removeEventListener("animationend", off); };
+    el.addEventListener("animationend", off);
+  }
+
+  // ---------- Refill (genau 1 Slot/Zug; row-basiert L→R) ----------
+  function refillOneRemovedSlot() {
+    const removed = Array.from(document.querySelectorAll(".card.field.removed"));
+    if (removed.length === 0) return false;
+    const groupedByRow = {};
+    removed.forEach(slot => {
+      const top = slot.parentElement?.style?.top || "";
+      (groupedByRow[top] ||= []).push(slot);
+    });
+    const sortedTops = Object.keys(groupedByRow).sort((a, b) => (parseFloat(a) || 0) - (parseFloat(b) || 0));
+    for (const top of sortedTops) {
+      for (const slot of groupedByRow[top]) {
+        if (wasteStack.length === 0) return false;
+        const prev = wasteStack.pop();
+        if (prev?.parentElement === wasteEl) wasteEl.removeChild(prev);
+        slot.classList.remove("removed", "selected", "covered", "unselectable");
+        slot.textContent = prev?.textContent || getRandomCardValue();
+        slot.style.visibility = "visible";
+        updateCoverageState();
+        if (wasteStack.length === 0) ensureWasteCard();
+        if (stock.length === 0) maybeTriggerLoss();
         return true;
       }
     }
     return false;
   }
 
-  function updateCoverageState() {
-    const fieldCards = document.querySelectorAll(".card.field");
-    fieldCards.forEach(card => {
-      const covered = isCardCovered(card);
-      card.classList.toggle("covered", covered);
-      const clickable = !covered && !card.classList.contains("removed");
-      card.classList.toggle("clickable", clickable);
-      card.classList.toggle("unselectable", !clickable); // visuell grau
-    });
-
-    if (stock.length === 0) maybeTriggerLoss();
-  }
-
-  // ---------- Click Handling ----------
-  document.addEventListener("click", (ev) => {
-    if (gameOver) return;
-
-    const card = ev.target.closest?.(".card");
-    if (!card) return;
-
-    // Feldkarten
-    if (card.classList.contains("field")) {
-      if (card.classList.contains("removed")) {
-        ev.preventDefault(); ev.stopPropagation(); return;
-      }
-      if (card.classList.contains("covered")) {
-        ev.preventDefault(); ev.stopPropagation();
-        triggerShake(card);
-        return;
-      }
-      card.classList.toggle("selected");
-      checkSelectedCards();
-      return;
-    }
-
-    // Waste-Karten
-    if (card.classList.contains("waste-card")) {
-      card.classList.toggle("selected");
-      checkSelectedCards();
-      return;
-    }
-  }, true);
-
-  function triggerShake(el) {
-    if (!el.classList.contains("covered")) return;
-    if (el.classList.contains("shake")) return;
-    el.classList.add("shake");
-    const off = () => {
-      el.classList.remove("shake");
-      el.removeEventListener("animationend", off);
-    };
-    el.addEventListener("animationend", off);
-  }
-
-  // ---------- Refill (genau 1 Slot/Zug; row-basiert L→R) ----------
-  function refillOneRemovedSlot() {
-    const removedSlots = Array.from(document.querySelectorAll(".card.field.removed"));
-    if (removedSlots.length === 0) return false;
-
-    const groupedByRow = {};
-    removedSlots.forEach(slot => {
-      const top = slot.parentElement?.style?.top || "";
-      if (!groupedByRow[top]) groupedByRow[top] = [];
-      groupedByRow[top].push(slot);
-    });
-
-    const sortedTops = Object.keys(groupedByRow).sort((a, b) => {
-      const na = parseFloat(a), nb = parseFloat(b);
-      if (Number.isNaN(na) && Number.isNaN(nb)) return 0;
-      if (Number.isNaN(na)) return 1;
-      if (Number.isNaN(nb)) return -1;
-      return na - nb;
-    });
-
-    for (const top of sortedTops) {
-      const rowSlots = groupedByRow[top];
-      for (const slot of rowSlots) {
-        if (wasteStack.length === 0) return false;
-
-        const prevCardEl = wasteStack.pop();
-        if (prevCardEl?.parentElement === wasteEl) {
-          wasteEl.removeChild(prevCardEl);
-        }
-
-        slot.classList.remove("removed", "selected", "covered", "unselectable");
-        slot.textContent = prevCardEl?.textContent || getRandomCardValue();
-        slot.style.visibility = "visible";
-
-        updateCoverageState();
-
-        if (wasteStack.length === 0) ensureWasteCard();
-
-        if (stock.length === 0) maybeTriggerLoss();
-        return true; // genau 1
-      }
-    }
-    return false;
-  }
-
-  // ---------- Waste Helpers (Flip/Deal Animation) ----------
+  // ---------- Waste Helpers ----------
   function pushWasteCardWithValue(value, source = "stock") {
     const newCard = document.createElement("div");
     newCard.classList.add("waste-card", "card", "clickable", "deal-anim", "flip-anim");
     newCard.textContent = value;
-    newCard.dataset.source = source; // "stock" | "synthetic"
+    newCard.dataset.source = source;
     newCard.style.zIndex = String(wasteStack.length);
     wasteEl.appendChild(newCard);
     newCard.addEventListener("animationend", () => {
-      newCard.classList.remove("deal-anim");
-      newCard.classList.remove("flip-anim");
+      newCard.classList.remove("deal-anim", "flip-anim");
     }, { once: true });
     wasteStack.push(newCard);
   }
-
   function ensureWasteCard() {
     if (wasteStack.length > 0) return;
     const playable = getPlayableFieldValuesWithIds();
@@ -510,40 +455,24 @@ window.addEventListener("DOMContentLoaded", () => {
   // ---------- Draw vom Deck ----------
   function drawCard(initial = false) {
     if (!initial) {
-      if (streak > 0) {
-        streak = 0;
-        updateScoreHud();
-      }
+      if (streak > 0) { streak = 0; updateScoreHud(); }
       refillOneRemovedSlot();
       updateCoverageState();
     }
-    if (stock.length === 0) {
-      maybeTriggerLoss();
-      return;
-    }
-
+    if (stock.length === 0) { maybeTriggerLoss(); return; }
     const newCardValue = stock.pop();
     updateStockCount();
     pushWasteCardWithValue(newCardValue, "stock");
-
     if (stock.length === 0) maybeTriggerLoss();
   }
-
-  deckEl.addEventListener("click", () => {
-    if (gameOver) return;
-    drawCard();
-  });
 
   // ---------- Kombination prüfen + Scoring + Popups ----------
   function checkSelectedCards() {
     const selectedCards = Array.from(document.querySelectorAll(".card.selected"));
     if (selectedCards.length === 0) return;
 
-    const total = selectedCards
-      .map(el => getCardNumericValue(el.textContent))
-      .reduce((a, b) => a + b, 0);
+    const total = selectedCards.map(el => getCardNumericValue(el.textContent)).reduce((a, b) => a + b, 0);
 
-    // Falsche Kombi: > 11 => Penalty + Auto-Deselect + zentrales Popup
     if (total > 11) {
       adjustScore(WRONG_COMBO_PENALTY);
       const center = centerOfElements(selectedCards);
@@ -551,30 +480,21 @@ window.addEventListener("DOMContentLoaded", () => {
       selectedCards.forEach(el => el.classList.remove("selected"));
       return;
     }
-
     if (total !== 11) return;
 
-    // Punkte berechnen
     const fieldCards = selectedCards.filter(el => el.classList.contains("field"));
     const basePoints = 10;
     const perField = 2 * fieldCards.length;
     const streakBonus = 2 * streak;
     const movePoints = basePoints + perField + streakBonus;
 
-    // Popups: pro Feldkarte "+2"
     fieldCards.forEach(el => spawnPopupOnElement(el, "+2", "pos"));
-
-    // Zentrale Popup(s): +Gesamt und ggf. +Streak
     const center = centerOfElements(selectedCards);
     spawnPopupAt(center.x, center.y, `+${movePoints}`, "pos");
-    if (streakBonus > 0) {
-      spawnPopupAt(center.x, center.y - 22, `+${streakBonus} streak`, "pos");
-    }
+    if (streakBonus > 0) spawnPopupAt(center.x, center.y - 22, `+${streakBonus} streak`, "pos");
 
-    // Entfernen / Anwenden
     selectedCards.forEach(card => {
       card.classList.remove("selected");
-
       if (card.classList.contains("field")) {
         card.classList.remove("clickable", "unselectable");
         card.classList.add("removed");
@@ -582,26 +502,19 @@ window.addEventListener("DOMContentLoaded", () => {
       } else if (card.classList.contains("waste-card")) {
         const idx = wasteStack.indexOf(card);
         if (idx >= 0) wasteStack.splice(idx, 1);
-        if (card.parentElement === wasteEl) {
-          wasteEl.removeChild(card);
-        }
+        if (card.parentElement === wasteEl) wasteEl.removeChild(card);
       }
     });
 
-    // Punkte + Streak
     adjustScore(movePoints);
     streak += 1;
     updateScoreHud();
 
-    // Peak Bonus prüfen (Popup zentriert über dem Feld)
     checkAndAwardPeakBonuses();
-
     updateCoverageState();
     checkWinCondition();
-
     ensureWasteCard();
     setTimeout(ensureWasteCard, 0);
-
     if (stock.length === 0) maybeTriggerLoss();
   }
 
@@ -621,22 +534,18 @@ window.addEventListener("DOMContentLoaded", () => {
   function checkWinCondition() {
     const remainingField = document.querySelectorAll(".card.field:not(.removed)");
     if (remainingField.length === 0) {
-      // innerhalb der Zeit gewonnen -> Timer pausieren + Bonus berechnen
       if (!gameOver) {
         pauseTimer();
         const remainingSeconds = Math.ceil(timeRemaining / 1000);
         const timeBonus = Math.max(0, remainingSeconds * TIME_BONUS_PER_SEC);
         const stockBonus = Math.max(0, stock.length * STOCK_BONUS_PER_CARD);
-
         const area = peakRow?.getBoundingClientRect?.();
         const cx = area ? (area.left + area.width / 2) : (window.innerWidth / 2);
         const cy = area ? (area.top + 40) : 120;
         if (timeBonus > 0) spawnPopupAt(cx - 40, cy, `Time +${timeBonus}`, "pos");
         if (stockBonus > 0) spawnPopupAt(cx + 40, cy, `Stock +${stockBonus}`, "pos");
-
         adjustScore(timeBonus + stockBonus);
       }
-
       adjustScore(WIN_BONUS);
       spawnCenterPopup(`Win +${WIN_BONUS}`, "pos");
       showWinMessage();
@@ -644,48 +553,38 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   function getPlayableFieldValues() {
-    const cards = Array.from(document.querySelectorAll(".card.field"))
-      .filter(el => !el.classList.contains("removed") && !el.classList.contains("covered"));
-    return cards.map(el => getCardNumericValue(el.textContent));
+    return Array.from(document.querySelectorAll(".card.field"))
+      .filter(el => !el.classList.contains("removed") && !el.classList.contains("covered"))
+      .map(el => getCardNumericValue(el.textContent));
   }
-
   function getPlayableFieldValuesWithIds() {
-    const cards = Array.from(document.querySelectorAll(".card.field"))
-      .filter(el => !el.classList.contains("removed") && !el.classList.contains("covered"));
-    return cards.map(el => ({ v: getCardNumericValue(el.textContent), id: el.id }));
+    return Array.from(document.querySelectorAll(".card.field"))
+      .filter(el => !el.classList.contains("removed") && !el.classList.contains("covered"))
+      .map(el => ({ v: getCardNumericValue(el.textContent), id: el.id }));
   }
-
   function getTopWasteValueOrNull() {
     if (wasteStack.length === 0) return null;
-    const top = wasteStack[wasteStack.length - 1];
-    return getCardNumericValue(top.textContent);
+    return getCardNumericValue(wasteStack[wasteStack.length - 1].textContent);
   }
-
   function existsAnyElevenCombo() {
     const vals = getPlayableFieldValues();
-    // Paare
     for (let i = 0; i < vals.length; i++) {
       for (let j = i + 1; j < vals.length; j++) {
         if (vals[i] + vals[j] === 11) return true;
       }
     }
-    // Waste-Top + Feld
     const wasteTop = getTopWasteValueOrNull();
     if (wasteTop != null) {
-      for (const v of vals) {
-        if (wasteTop + v === 11) return true;
-      }
+      for (const v of vals) if (wasteTop + v === 11) return true;
     }
     return false;
   }
-
   function maybeTriggerLoss() {
     if (gameOver) return;
     if (stock.length > 0) return;
     if (existsAnyElevenCombo()) return;
     showLoseMessage();
   }
-
   function showWinMessage() {
     if (gameOver) return;
     gameOver = true;
@@ -695,7 +594,6 @@ window.addEventListener("DOMContentLoaded", () => {
     message.classList.add("win-message");
     document.body.appendChild(message);
   }
-
   function showLoseMessage(customText) {
     if (gameOver) return;
     gameOver = true;
@@ -710,8 +608,8 @@ window.addEventListener("DOMContentLoaded", () => {
 
   // ---------- Deck/Stock: Komplement-Bias ----------
   function generateBiasedStock(size) {
-    const allFieldCards = Array.from(document.querySelectorAll(".card.field"));
-    const fieldVals = allFieldCards.map(el => getCardNumericValue(el.textContent));
+    const fieldVals = Array.from(document.querySelectorAll(".card.field"))
+      .map(el => getCardNumericValue(el.textContent));
     const pool = [];
     const freq = {};
     fieldVals.forEach(v => { freq[v] = (freq[v] || 0) + 1; });
@@ -721,29 +619,28 @@ window.addEventListener("DOMContentLoaded", () => {
       const weight = Math.max(1, Math.min(6, freq[v] + 2));
       for (let i = 0; i < weight; i++) pool.push(comp);
     });
-
     const result = [];
     for (let i = 0; i < size; i++) {
-      let pickNum;
-      if (pool.length > 0 && Math.random() < 0.7) {
-        pickNum = pool[Math.floor(Math.random() * pool.length)];
-      } else {
-        pickNum = Math.floor(Math.random() * 10) + 1;
-      }
-      const val = pickNum === 1 ? "A" : String(pickNum);
-      result.push(val);
+      let pickNum = (pool.length > 0 && Math.random() < 0.7)
+        ? pool[Math.floor(Math.random() * pool.length)]
+        : Math.floor(Math.random() * 10) + 1;
+      result.push(pickNum === 1 ? "A" : String(pickNum));
     }
     return result;
   }
 
-  // ---------- Timer UI ----------
+  // ---------- Timebar (ohne Text-Label) ----------
   function ensureTimebar() {
     let bar = document.getElementById("timebar");
     if (!bar) {
       bar = document.createElement("div");
       bar.id = "timebar";
-      bar.innerHTML = `<div class="fill"></div><div class="label">01:30</div>`;
+      bar.innerHTML = `<div class="fill"></div>`; // kein Label mehr!
       document.body.appendChild(bar);
+    } else {
+      // falls alte Builds ein Label hatten, entferne es
+      const oldLabel = bar.querySelector(".label");
+      if (oldLabel) oldLabel.remove();
     }
     return bar;
   }
@@ -769,10 +666,9 @@ window.addEventListener("DOMContentLoaded", () => {
     updateTimebar(timeRemaining);
   }
   function colorForPct(p) {
-    // p = Restanteil (0..1). >0.66 = grün, >0.33 = gelb, sonst rot
-    if (p > 0.66) return "#41c77d";
-    if (p > 0.33) return "#e6c14a";
-    return "#e85b5b";
+    if (p > 0.66) return "#41c77d";  // grün
+    if (p > 0.33) return "#e6c14a";  // gelb
+    return "#e85b5b";                // rot
   }
   function updateTimebar(ms) {
     const fill = timebar.querySelector(".fill");
@@ -781,14 +677,6 @@ window.addEventListener("DOMContentLoaded", () => {
       fill.style.width = Math.max(0, Math.min(100, pct * 100)) + "%";
       fill.style.background = colorForPct(pct);
     }
-    updateTimeLabel(ms);
-  }
-  function updateTimeLabel(ms) {
-    const s = Math.ceil(ms / 1000);
-    const mm = String(Math.floor(s / 60)).padStart(2, "0");
-    const ss = String(s % 60).padStart(2, "0");
-    const label = timebar.querySelector(".label");
-    if (label) label.textContent = `${mm}:${ss}`;
   }
 
   // ---------- Restart / Init ----------
@@ -796,7 +684,6 @@ window.addEventListener("DOMContentLoaded", () => {
     const el = document.getElementById("stockCount");
     if (el) el.textContent = String(stock.length);
   }
-
   function restartGame() {
     gameOver = false;
     score = 0;
@@ -812,19 +699,16 @@ window.addEventListener("DOMContentLoaded", () => {
     for (let d = 0; d < NUM_DIAMONDS; d++) {
       peakRow.appendChild(createDiamond(d));
     }
-
     updateCoverageState();
+
     stock = generateBiasedStock(24);
     updateStockCount();
 
     drawCard(true);
     ensureWasteCard();
 
-    // Timer reset + start
     resetTimer();
     startTimer();
-
-    // Streunende "Stock:"-Labels erneut killen
     killStrayStockLabels();
   }
 
@@ -835,9 +719,7 @@ window.addEventListener("DOMContentLoaded", () => {
   ensureScoreHud();
   ensureStockWrapAndLabel();
 
-  for (let d = 0; d < NUM_DIAMONDS; d++) {
-    peakRow.appendChild(createDiamond(d));
-  }
+  for (let d = 0; d < NUM_DIAMONDS; d++) peakRow.appendChild(createDiamond(d));
   updateCoverageState();
 
   stock = generateBiasedStock(24);
@@ -846,12 +728,10 @@ window.addEventListener("DOMContentLoaded", () => {
   drawCard(true);
   if (wasteStack.length === 0) ensureWasteCard();
 
-  // Timer initial starten (1:30)
   resetTimer();
   startTimer();
 
-  // Letzter Fallback gegen „Stock:“ in der Mitte
   killStrayStockLabels();
 
-  window.addEventListener("resize", updateCoverageState);
+  window.addEventListener("resize", updateCoverageState, { passive: true });
 });
