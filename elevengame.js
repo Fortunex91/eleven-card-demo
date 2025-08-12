@@ -9,7 +9,7 @@ window.addEventListener("DOMContentLoaded", () => {
   const rowsPerDiamond = [1, 2, 3, 2, 1];
   const NUM_DIAMONDS = 3;
   const cardValues = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
-  let stock = [];                // wird unten über generateBiasedStock() befüllt
+  let stock = [];                // via generateBiasedStock()
   const wasteStack = [];         // Array von .waste-card DOM-Elementen (Stack)
   let gameOver = false;
 
@@ -32,6 +32,43 @@ window.addEventListener("DOMContentLoaded", () => {
     return 11 - v;
   }
 
+  // Popup‑Utils
+  function spawnPopupAt(x, y, text, type = "pos") {
+    const pop = document.createElement("div");
+    pop.className = `points-pop ${type}`;
+    pop.textContent = text;
+    document.body.appendChild(pop);
+    const rect = pop.getBoundingClientRect();
+    pop.style.left = `${Math.round(x - rect.width / 2)}px`;
+    pop.style.top  = `${Math.round(y - rect.height)}px`;
+    // Auto-remove
+    pop.addEventListener("animationend", () => pop.remove(), { once: true });
+  }
+  function spawnPopupOnElement(el, text, type = "pos") {
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    spawnPopupAt(r.left + r.width / 2, r.top, text, type);
+  }
+  function centerOfElements(els) {
+    if (!els || els.length === 0) return { x: window.innerWidth / 2, y: 80 };
+    let minL = Infinity, minT = Infinity, maxR = -Infinity, maxB = -Infinity;
+    els.forEach(el => {
+      const r = el.getBoundingClientRect();
+      minL = Math.min(minL, r.left);
+      minT = Math.min(minT, r.top);
+      maxR = Math.max(maxR, r.right);
+      maxB = Math.max(maxB, r.bottom);
+    });
+    return { x: (minL + maxR) / 2, y: minT - 6 };
+  }
+  function spawnCenterPopup(text, type = "pos") {
+    // zentriert über dem Spielfeld (über peakRow)
+    const area = peakRow?.getBoundingClientRect?.();
+    const x = area ? (area.left + area.right) / 2 : window.innerWidth / 2;
+    const y = area ? (area.top) : 80;
+    spawnPopupAt(x, y, text, type);
+  }
+
   // ---------- UI: Top-Bar (Tutorial + Restart) ----------
   function ensureTopBar() {
     let topbar = document.getElementById("topBar");
@@ -39,7 +76,6 @@ window.addEventListener("DOMContentLoaded", () => {
       topbar = document.createElement("div");
       topbar.id = "topBar";
       topbar.className = "top-bar";
-      // Buttons werden separat erzeugt
       document.body.appendChild(topbar);
     }
     return topbar;
@@ -88,7 +124,6 @@ window.addEventListener("DOMContentLoaded", () => {
         <span>Score: <strong id="scoreValue">0</strong></span>
         <span>Streak: <strong id="streakValue">0</strong></span>
       `;
-      // Score HUD über dem mittleren Peak (peakRow ist unsere Referenz)
       if (peakRow && peakRow.parentElement) {
         peakRow.parentElement.appendChild(hud);
       } else {
@@ -145,9 +180,8 @@ window.addEventListener("DOMContentLoaded", () => {
     ov.classList.toggle("hidden");
   }
 
-  // ---------- Stock Count unter dem Deck ----------
+  // ---------- Stock Count unter dem Deck (ohne Label!) ----------
   function ensureStockWrapAndLabel() {
-    // Erzeuge einen Wrapper, damit die Zahl sicher UNTER dem Deck angezeigt wird
     let wrap = deckEl.closest(".deck-wrap");
     if (!wrap) {
       wrap = document.createElement("div");
@@ -158,7 +192,6 @@ window.addEventListener("DOMContentLoaded", () => {
     }
     let label = document.getElementById("stockCount");
     if (!label) {
-      // Falls es kein Element gab, neu anlegen
       const lbl = document.createElement("div");
       lbl.id = "stockCount";
       wrap.appendChild(lbl);
@@ -276,7 +309,7 @@ window.addEventListener("DOMContentLoaded", () => {
       card.classList.toggle("covered", covered);
       const clickable = !covered && !card.classList.contains("removed");
       card.classList.toggle("clickable", clickable);
-      card.classList.toggle("unselectable", !clickable); // nur visuelles Grau
+      card.classList.toggle("unselectable", !clickable); // visuell grau
     });
 
     if (stock.length === 0) maybeTriggerLoss();
@@ -376,7 +409,6 @@ window.addEventListener("DOMContentLoaded", () => {
     newCard.dataset.source = source; // "stock" | "synthetic"
     newCard.style.zIndex = String(wasteStack.length);
     wasteEl.appendChild(newCard);
-    // Ende der Animationen Klassen wieder entfernen
     newCard.addEventListener("animationend", () => {
       newCard.classList.remove("deal-anim");
       newCard.classList.remove("flip-anim");
@@ -386,7 +418,6 @@ window.addEventListener("DOMContentLoaded", () => {
 
   function ensureWasteCard() {
     if (wasteStack.length > 0) return;
-    // Synthetische Karte: 70% Chance, ein Komplement zu einer spielbaren Karte zu liefern
     const playable = getPlayableFieldValuesWithIds();
     let value;
     if (playable.length > 0 && Math.random() < 0.7) {
@@ -403,7 +434,6 @@ window.addEventListener("DOMContentLoaded", () => {
   // ---------- Draw vom Deck ----------
   function drawCard(initial = false) {
     if (!initial) {
-      // Ziehen unterbricht Streak, aber KEINE Penalty
       if (streak > 0) {
         streak = 0;
         updateScoreHud();
@@ -418,19 +448,17 @@ window.addEventListener("DOMContentLoaded", () => {
 
     const newCardValue = stock.pop();
     updateStockCount();
-    // Flip/Deal-Animation in pushWasteCardWithValue
     pushWasteCardWithValue(newCardValue, "stock");
 
     if (stock.length === 0) maybeTriggerLoss();
   }
 
-  // Klick auf Deck
   deckEl.addEventListener("click", () => {
     if (gameOver) return;
     drawCard();
   });
 
-  // ---------- Kombination prüfen + Scoring ----------
+  // ---------- Kombination prüfen + Scoring + Popups ----------
   function checkSelectedCards() {
     const selectedCards = Array.from(document.querySelectorAll(".card.selected"));
     if (selectedCards.length === 0) return;
@@ -439,20 +467,33 @@ window.addEventListener("DOMContentLoaded", () => {
       .map(el => getCardNumericValue(el.textContent))
       .reduce((a, b) => a + b, 0);
 
-    // Falsche Kombi: > 11 => Penalty + Auto-Deselect
+    // Falsche Kombi: > 11 => Penalty + Auto-Deselect + zentrales Popup
     if (total > 11) {
       adjustScore(WRONG_COMBO_PENALTY);
+      const center = centerOfElements(selectedCards);
+      spawnPopupAt(center.x, center.y, `${WRONG_COMBO_PENALTY}`, "neg");
       selectedCards.forEach(el => el.classList.remove("selected"));
       return;
     }
 
     if (total !== 11) return;
 
-    // Punkte berechnen: Grund + Feldkarten + Streak-Bonus
-    const fieldCount = selectedCards.filter(el => el.classList.contains("field")).length;
-    const basePoints = 10 + (2 * fieldCount);
+    // Punkte berechnen
+    const fieldCards = selectedCards.filter(el => el.classList.contains("field"));
+    const basePoints = 10;
+    const perField = 2 * fieldCards.length;
     const streakBonus = 2 * streak;
-    const movePoints = basePoints + streakBonus;
+    const movePoints = basePoints + perField + streakBonus;
+
+    // Popups: pro Feldkarte "+2"
+    fieldCards.forEach(el => spawnPopupOnElement(el, "+2", "pos"));
+
+    // Zentrale Popup(s): +Gesamt und ggf. +Streak
+    const center = centerOfElements(selectedCards);
+    spawnPopupAt(center.x, center.y, `+${movePoints}`, "pos");
+    if (streakBonus > 0) {
+      spawnPopupAt(center.x, center.y - 22, `+${streakBonus} streak`, "pos");
+    }
 
     // Entfernen / Anwenden
     selectedCards.forEach(card => {
@@ -476,7 +517,7 @@ window.addEventListener("DOMContentLoaded", () => {
     streak += 1;
     updateScoreHud();
 
-    // Peak Bonus prüfen
+    // Peak Bonus prüfen (Popup zentriert über dem Feld)
     checkAndAwardPeakBonuses();
 
     updateCoverageState();
@@ -495,17 +536,9 @@ window.addEventListener("DOMContentLoaded", () => {
       if (remainingInPeak.length === 0) {
         clearedPeaks.add(d);
         adjustScore(PEAK_CLEAR_BONUS);
-        flashBadge(`Peak +${PEAK_CLEAR_BONUS}`);
+        spawnCenterPopup(`Peak +${PEAK_CLEAR_BONUS}`, "pos");
       }
     }
-  }
-
-  function flashBadge(text) {
-    const badge = document.createElement("div");
-    badge.className = "score-badge";
-    badge.textContent = text;
-    document.body.appendChild(badge);
-    setTimeout(() => badge.remove(), 1200);
   }
 
   // ---------- Win/Lose ----------
@@ -513,6 +546,7 @@ window.addEventListener("DOMContentLoaded", () => {
     const remainingField = document.querySelectorAll(".card.field:not(.removed)");
     if (remainingField.length === 0) {
       adjustScore(WIN_BONUS);
+      spawnCenterPopup(`Win +${WIN_BONUS}`, "pos");
       showWinMessage();
     }
   }
@@ -583,24 +617,17 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   // ---------- Deck/Stock: Komplement-Bias ----------
-  // Idee:
-  // 1) Feldkarten erstmal zufällig verteilen (wie bisher).
-  // 2) Stock so generieren, dass Komplementzahlen zu den (aktuellen) Feldwerten
-  //    stärker gewichtet sind (70% aus Komplement-Pool, 30% reiner Zufall).
   function generateBiasedStock(size) {
     const allFieldCards = Array.from(document.querySelectorAll(".card.field"));
     const fieldVals = allFieldCards.map(el => getCardNumericValue(el.textContent));
-    // Komplement-Pool aufbauen (Gewicht je nach Häufigkeit im Feld)
     const pool = [];
     const freq = {};
     fieldVals.forEach(v => { freq[v] = (freq[v] || 0) + 1; });
     Object.keys(freq).forEach(k => {
       const v = parseInt(k, 10);
       const comp = complementFor(v);
-      const weight = Math.max(1, Math.min(6, freq[v] + 2)); // Deckelung, aber Komplement wird bevorzugt
-      for (let i = 0; i < weight; i++) {
-        pool.push(comp);
-      }
+      const weight = Math.max(1, Math.min(6, freq[v] + 2));
+      for (let i = 0; i < weight; i++) pool.push(comp);
     });
 
     const result = [];
@@ -609,7 +636,6 @@ window.addEventListener("DOMContentLoaded", () => {
       if (pool.length > 0 && Math.random() < 0.7) {
         pickNum = pool[Math.floor(Math.random() * pool.length)];
       } else {
-        // Zufall, aber 1..10
         pickNum = Math.floor(Math.random() * 10) + 1;
       }
       const val = pickNum === 1 ? "A" : String(pickNum);
@@ -636,17 +662,14 @@ window.addEventListener("DOMContentLoaded", () => {
     while (wasteEl.firstChild) wasteEl.removeChild(wasteEl.firstChild);
     while (peakRow.firstChild) peakRow.removeChild(peakRow.firstChild);
 
-    // Peaks erstellen (Feld zufällig)
     for (let d = 0; d < NUM_DIAMONDS; d++) {
       peakRow.appendChild(createDiamond(d));
     }
 
-    // Coverage einmal setzen, dann Stock mit Bias generieren
     updateCoverageState();
     stock = generateBiasedStock(24);
     updateStockCount();
 
-    // Initial eine Waste-Karte ziehen (Flip/Deal)
     drawCard(true);
     ensureWasteCard();
   }
@@ -663,11 +686,9 @@ window.addEventListener("DOMContentLoaded", () => {
   }
   updateCoverageState();
 
-  // Stock initial mit Bias erzeugen
   stock = generateBiasedStock(24);
   updateStockCount();
 
-  // erste Karte auf Waste (Flip)
   drawCard(true);
   if (wasteStack.length === 0) ensureWasteCard();
 
