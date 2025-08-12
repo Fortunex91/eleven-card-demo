@@ -21,6 +21,14 @@ window.addEventListener("DOMContentLoaded", () => {
   const WIN_BONUS = 100;
   const clearedPeaks = new Set();
 
+  // ---- Timer / Zeitleiste ----
+  const TIME_LIMIT_MS = 60_000;         // 1 Minute
+  const TIME_BONUS_PER_SEC = 5;         // Punkte je verbleibende Sekunde
+  const STOCK_BONUS_PER_CARD = 10;      // Punkte je verbleibender Stock-Karte
+  let timer = null;
+  let timeStart = 0;
+  let timeRemaining = TIME_LIMIT_MS;
+
   // ---------- Utils ----------
   function getRandomCardValue() {
     return cardValues[Math.floor(Math.random() * cardValues.length)];
@@ -32,17 +40,63 @@ window.addEventListener("DOMContentLoaded", () => {
     return 11 - v;
   }
 
-  // Popup‑Utils
+  // ---------- Popups + Anti-Overlap ----------
+  const activePopups = []; // {el, expires}
   function spawnPopupAt(x, y, text, type = "pos") {
     const pop = document.createElement("div");
     pop.className = `points-pop ${type}`;
     pop.textContent = text;
     document.body.appendChild(pop);
     const rect = pop.getBoundingClientRect();
-    pop.style.left = `${Math.round(x - rect.width / 2)}px`;
-    pop.style.top  = `${Math.round(y - rect.height)}px`;
+    let left = Math.round(x - rect.width / 2);
+    let top  = Math.round(y - rect.height);
+
+    pop.style.left = `${left}px`;
+    pop.style.top  = `${top}px`;
+
+    // Anti-Overlap: nach oben "nudgen", bis keine Kollision
+    requestAnimationFrame(() => {
+      avoidOverlap(pop);
+    });
+
     // Auto-remove
-    pop.addEventListener("animationend", () => pop.remove(), { once: true });
+    const ttl = 900;
+    const item = { el: pop, expires: performance.now() + ttl };
+    activePopups.push(item);
+
+    pop.addEventListener("animationend", () => {
+      pop.remove();
+      const i = activePopups.indexOf(item);
+      if (i >= 0) activePopups.splice(i, 1);
+    }, { once: true });
+  }
+  function isOverlap(a, b) {
+    return !(a.left > b.right || a.right < b.left || a.top > b.bottom || a.bottom < b.top);
+  }
+  function avoidOverlap(el) {
+    const MAX_NUDGE = 90;
+    const STEP = 18;
+    let nudge = 0;
+    let collided = true;
+
+    const rect = () => el.getBoundingClientRect();
+    function anyCollision() {
+      const r = rect();
+      const others = activePopups
+        .map(p => p.el)
+        .filter(n => n !== el && document.body.contains(n))
+        .map(n => n.getBoundingClientRect());
+      return others.some(o => isOverlap(r, o));
+    }
+
+    while (collided && nudge <= MAX_NUDGE) {
+      collided = anyCollision();
+      if (collided) {
+        nudge += STEP;
+        const curTop = parseFloat(el.style.top || "0");
+        el.style.top = (curTop - STEP) + "px";
+      }
+    }
   }
   function spawnPopupOnElement(el, text, type = "pos") {
     if (!el) return;
@@ -62,7 +116,6 @@ window.addEventListener("DOMContentLoaded", () => {
     return { x: (minL + maxR) / 2, y: minT - 6 };
   }
   function spawnCenterPopup(text, type = "pos") {
-    // zentriert über dem Spielfeld (über peakRow)
     const area = peakRow?.getBoundingClientRect?.();
     const x = area ? (area.left + area.right) / 2 : window.innerWidth / 2;
     const y = area ? (area.top) : 80;
@@ -113,7 +166,7 @@ window.addEventListener("DOMContentLoaded", () => {
     return btn;
   }
 
-  // ---------- Score HUD: zentriert über mittlerem Peak ----------
+  // ---------- Score HUD ----------
   function ensureScoreHud() {
     let hud = document.getElementById("scoreHud");
     if (!hud) {
@@ -145,7 +198,7 @@ window.addEventListener("DOMContentLoaded", () => {
     updateScoreHud();
   }
 
-  // ---------- Tutorial Overlay (EN) ----------
+  // ---------- Tutorial Overlay ----------
   function ensureTutorialOverlay() {
     let overlay = document.getElementById("tutorialOverlay");
     if (!overlay) {
@@ -198,6 +251,10 @@ window.addEventListener("DOMContentLoaded", () => {
     } else if (label.parentElement !== wrap) {
       wrap.appendChild(label);
     }
+
+    // Sicherstellen, dass evtl. vorhandenes "Stock:" Label verschwindet
+    const stockLabel = document.getElementById("stockLabel") || document.querySelector(".stock-label");
+    if (stockLabel) stockLabel.style.display = "none";
   }
 
   // ---------- Mapping & Layout ----------
@@ -488,7 +545,7 @@ window.addEventListener("DOMContentLoaded", () => {
     // Popups: pro Feldkarte "+2"
     fieldCards.forEach(el => spawnPopupOnElement(el, "+2", "pos"));
 
-    // Zentrale Popup(s): +Gesamt und ggf. +Streak
+    // Zentrale Popup(s): +Gesamt und ggf. +Streak (Anti-Overlap sorgt für saubere Stapelung)
     const center = centerOfElements(selectedCards);
     spawnPopupAt(center.x, center.y, `+${movePoints}`, "pos");
     if (streakBonus > 0) {
@@ -545,6 +602,23 @@ window.addEventListener("DOMContentLoaded", () => {
   function checkWinCondition() {
     const remainingField = document.querySelectorAll(".card.field:not(.removed)");
     if (remainingField.length === 0) {
+      // innerhalb der Zeit gewonnen -> Timer pausieren + Bonus berechnen
+      if (!gameOver) {
+        pauseTimer();
+        const remainingSeconds = Math.ceil(timeRemaining / 1000);
+        const timeBonus = Math.max(0, remainingSeconds * TIME_BONUS_PER_SEC);
+        const stockBonus = Math.max(0, stock.length * STOCK_BONUS_PER_CARD);
+
+        // zentrale Bonus-Popups (Anti-Overlap aktiv)
+        const area = peakRow?.getBoundingClientRect?.();
+        const cx = area ? (area.left + area.width / 2) : (window.innerWidth / 2);
+        const cy = area ? (area.top + 40) : 120;
+        if (timeBonus > 0) spawnPopupAt(cx - 40, cy, `Time +${timeBonus}`, "pos");
+        if (stockBonus > 0) spawnPopupAt(cx + 40, cy, `Stock +${stockBonus}`, "pos");
+
+        adjustScore(timeBonus + stockBonus);
+      }
+
       adjustScore(WIN_BONUS);
       spawnCenterPopup(`Win +${WIN_BONUS}`, "pos");
       showWinMessage();
@@ -604,12 +678,12 @@ window.addEventListener("DOMContentLoaded", () => {
     document.body.appendChild(message);
   }
 
-  function showLoseMessage() {
+  function showLoseMessage(customText) {
     if (gameOver) return;
     gameOver = true;
     ensureRestartButton();
     const message = document.createElement("div");
-    message.innerText = `💀 No moves left!\nScore: ${score}`;
+    message.innerText = `${customText || "💀 No moves left!"}\nScore: ${score}`;
     message.classList.add("win-message");
     message.style.background = "#e74c3c";
     message.style.color = "#fff";
@@ -644,6 +718,52 @@ window.addEventListener("DOMContentLoaded", () => {
     return result;
   }
 
+  // ---------- Timer UI ----------
+  function ensureTimebar() {
+    let bar = document.getElementById("timebar");
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "timebar";
+      bar.innerHTML = `<div class="fill"></div><div class="label">01:00</div>`;
+      document.body.appendChild(bar);
+    }
+    return bar;
+  }
+  const timebar = ensureTimebar();
+
+  function startTimer() {
+    clearInterval(timer);
+    timeStart = performance.now();
+    timer = setInterval(() => {
+      const elapsed = performance.now() - timeStart;
+      timeRemaining = Math.max(0, TIME_LIMIT_MS - elapsed);
+      updateTimebar(timeRemaining);
+      if (timeRemaining <= 0) {
+        clearInterval(timer);
+        showLoseMessage("⏳ Time's up!");
+      }
+    }, 120);
+  }
+  function pauseTimer() { clearInterval(timer); }
+  function resetTimer() {
+    clearInterval(timer);
+    timeRemaining = TIME_LIMIT_MS;
+    updateTimebar(timeRemaining);
+  }
+  function updateTimebar(ms) {
+    const fill = timebar.querySelector(".fill");
+    const pct = (ms / TIME_LIMIT_MS) * 100;
+    if (fill) fill.style.width = Math.max(0, Math.min(100, pct)) + "%";
+    updateTimeLabel(ms);
+  }
+  function updateTimeLabel(ms) {
+    const s = Math.ceil(ms / 1000);
+    const mm = String(Math.floor(s / 60)).padStart(2, "0");
+    const ss = String(s % 60).padStart(2, "0");
+    const label = timebar.querySelector(".label");
+    if (label) label.textContent = `${mm}:${ss}`;
+  }
+
   // ---------- Restart / Init ----------
   function updateStockCount() {
     const el = document.getElementById("stockCount");
@@ -672,6 +792,10 @@ window.addEventListener("DOMContentLoaded", () => {
 
     drawCard(true);
     ensureWasteCard();
+
+    // Timer reset + start
+    resetTimer();
+    startTimer();
   }
 
   // ---------- Initial Setup ----------
@@ -691,6 +815,10 @@ window.addEventListener("DOMContentLoaded", () => {
 
   drawCard(true);
   if (wasteStack.length === 0) ensureWasteCard();
+
+  // Timer initial starten
+  resetTimer();
+  startTimer();
 
   window.addEventListener("resize", updateCoverageState);
 });
