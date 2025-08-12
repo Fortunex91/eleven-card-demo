@@ -1,24 +1,19 @@
-/* ====== Global & Layout ====== */
-:root{
-  --table-green:#214d2d;            /* Grundfarbton */
-  --table-green-dark:#173822;
-  --ink:#0b0f0d;
-  --ink-soft:#2b3a34;
-  --gold:#d7c28a;
-  --popup-win:#38d18a;
-  --popup-penalty:#ff5a70;
-  --popup-neutral:#f6f1e6;
-  --marble-vignette: rgba(0,0,0,.22);
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+  background-color: #3b5d3c;
+  background-image: var(--background-image);
+  background-size: cover;
+  background-position: center;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
 }
 
-html, body {
-  height: 100%;
-  margin: 0;
-  color: #f3f7f4;
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
-  /* Dezent grüner Marmor-Hintergrund (eingebettetes SVG+Noise) */
-  background:
-    radial-gradient(120% 80% at 50% 0%, transparent 40%, var(--marble-vignette) 100%),
+:root {
+  --background-image:
+    radial-gradient(120% 80% at 50% 0%, rgba(0,0,0,.0) 40%, rgba(0,0,0,.22) 100%),
     url("data:image/svg+xml;utf8,\
     <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 800'>\
       <filter id='f'>\
@@ -26,116 +21,321 @@ html, body {
         <feColorMatrix type='matrix' values='0 0 0 0 0.07  0 0 0 0 0.20  0 0 0 0 0.12  0 0 0 0.9 0'/>\
         <feGaussianBlur stdDeviation='0.6'/>\
       </filter>\
-      <rect width='1200' height='800' fill='%23214d2d'/>\
+      <rect width='1200' height='800' fill='%233b5d3c'/>\
       <rect width='1200' height='800' filter='url(%23f)' opacity='0.25'/>\
       <g opacity='0.18'>\
-        <path d='M0,700 C200,600 450,720 700,640 C900,580 1050,620 1200,590' stroke='%23173822' stroke-width='40' fill='none'/>\
-        <path d='M0,500 C300,430 520,520 820,470 C980,445 1100,460 1200,450' stroke='%231c3f27' stroke-width='26' fill='none'/>\
+        <path d='M0,700 C200,600 450,720 700,640 C900,580 1050,620 1200,590' stroke='%232b4a30' stroke-width='40' fill='none'/>\
+        <path d='M0,500 C300,430 520,520 820,470 C980,445 1100,460 1200,450' stroke='%23345438' stroke-width='26' fill='none'/>\
       </g>\
     </svg>");
-  background-size: cover;
-  background-attachment: fixed;
+  --card-w: 60px;
+  --card-h: 90px;
+  --card-radius: 10px;
+  --ui-radius: 10px;
+  --elev: 0 6px 18px rgba(0,0,0,0.25);
+  --elev-strong: 0 10px 26px rgba(0,0,0,0.35);
+  --accent: #ffdd57;
+  --pos: #2ecc71;
+  --neg: #e74c3c;
+  --popup-shadow: 0 6px 18px rgba(0,0,0,0.28);
 }
 
-/* Haupt-Container deines Spielfeldes (falls vorhanden) */
-#game, #playfield, .board {
+/* Irgendein "Stock:"-Label sicher ausblenden */
+#stockLabel, .stock-label { display: none !important; }
+
+.game-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+  height: 100%;
+  width: 100%;
+  padding-top: 48px; /* Platz für Score-HUD */
   position: relative;
-  margin: 0 auto;
-  max-width: 1100px;
-  padding: 10px 16px 72px; /* Platz für Zeitleiste unten */
 }
 
-/* ====== Buttons (Tutorial / Restart) ====== */
-#tutorialBtn, #restartBtn {
+/* Top bar: Tutorial (links) + Restart (rechts daneben) */
+.top-bar {
   position: absolute;
-  top: 10px;
-  padding: 8px 12px;
-  background: rgba(18,35,24,0.7);
-  border: 1px solid #355846;
-  border-radius: 12px;
-  color: #e7f2ec;
-  cursor: pointer;
-  backdrop-filter: blur(2px);
-  transition: transform .08s ease, background .2s ease;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  gap: 8px;
+  z-index: 1200;
 }
-#tutorialBtn { left: 10px; }
-#restartBtn { left: 120px; }
-#tutorialBtn:hover, #restartBtn:hover { transform: translateY(-1px); background: rgba(25,50,34,.78); }
 
-/* ====== Header: Score / Streak / Stock Count ====== */
-#hud {
+.ui-button {
+  appearance: none;
+  border: 1px solid rgba(0,0,0,0.25);
+  border-radius: var(--ui-radius);
+  background: linear-gradient(180deg, #ffffff, #eaeaea);
+  padding: 8px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--elev);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.2s ease;
+}
+.ui-button:hover { transform: translateY(-1px); box-shadow: var(--elev-strong); }
+.ui-button:active { transform: translateY(0); }
+
+/* Score HUD zentriert über dem mittleren Peak */
+.score-hud {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 12px;
+  border-radius: var(--ui-radius);
+  border: 1px solid rgba(255,255,255,0.25);
+  background: linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.08));
+  color: #fff;
+  backdrop-filter: blur(6px);
+  box-shadow: var(--elev);
+  z-index: 1100;
+}
+.score-hud span strong {
+  color: #fff;
+  text-shadow: 0 1px 0 rgba(0,0,0,0.2);
+}
+
+.peak-row {
+  display: flex;
+  justify-content: space-evenly;
+  width: 80%;
+  margin-top: 28px;
+  margin-bottom: 40px;
   position: relative;
+}
+
+.peak {
+  position: relative;
+  width: 100px;
+  height: 360px;
+}
+
+.card-row {
   display: flex;
   justify-content: center;
-  gap: 22px;
-  margin: 10px 0 6px;
-  font-weight: 600;
-  text-shadow: 0 1px 0 #0d1b14;
-}
-#score,#streak,#stockCount { color: #f6f9f7; }
-#stockLabel, .stock-label { display: none !important; } /* “Stock:” ausblenden */
-
-/* ====== Karten ====== */
-.card {
+  gap: 6px;
   position: absolute;
-  width: 92px;
-  height: 128px;
-  border-radius: 12px;
-  background-size: cover;
-  background-position: center;
-  box-shadow: 0 6px 18px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.06);
-  transition: transform .12s ease, filter .15s ease;
-  will-change: transform;
+  left: 50%;
+  transform: translateX(-50%);
 }
-.card.selectable:hover { transform: translateY(-3px); }
+
+.card, .waste-card {
+  width: var(--card-w);
+  height: var(--card-h);
+  border-radius: var(--card-radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: 800;
+  color: #222;
+  border: 1px solid rgba(0,0,0,0.2);
+  transition: transform 0.2s, box-shadow 0.2s, background 0.2s, filter 0.2s;
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.95), rgba(240,240,240,0.98)),
+    radial-gradient(120% 90% at 20% 10%, rgba(255,255,255,0.85), rgba(255,255,255,0) 60%),
+    radial-gradient(120% 90% at 80% 90%, rgba(0,0,0,0.07), rgba(0,0,0,0) 60%);
+  box-shadow: 0 2px 0 rgba(0,0,0,0.15), var(--elev);
+}
+
+/* Nie transparent, nur visuell grauer wenn unselectable */
 .card.unselectable {
-  /* nicht transparent – nur dezent grau/entsättigt */
-  filter: grayscale(0.35) brightness(0.88) contrast(0.98);
+  background:
+    linear-gradient(145deg, #eaeaea, #f3f3f3),
+    radial-gradient(120% 90% at 20% 10%, rgba(255,255,255,0.7), rgba(255,255,255,0) 60%),
+    repeating-linear-gradient(135deg, rgba(0,0,0,0.03) 0, rgba(0,0,0,0.03) 2px, rgba(255,255,255,0.03) 2px, rgba(255,255,255,0.03) 4px);
+  filter: grayscale(0.2) brightness(0.97);
 }
 
-/* ====== Score Popups (Anti-Overlap) ====== */
-#score-float-layer {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  overflow: visible;
+.card.clickable, .waste-card.clickable { cursor: pointer; }
+
+.card.selected, .waste-card.selected {
+  transform: translateY(-6px);
+  box-shadow: 0 0 16px 6px rgba(255, 221, 87, 0.65), var(--elev-strong);
 }
-.score-popup {
-  position: absolute;
-  min-width: 24px;
-  padding: 4px 8px;
-  border-radius: 10px;
-  background: rgba(12,20,16,.85);
-  border: 1px solid rgba(235,255,244,.14);
-  color: var(--popup-neutral);
+
+/* Covered bleibt farblich grau, aber niemals transparent */
+.card.covered {
+  filter: grayscale(0.25) brightness(0.97);
+  opacity: 1 !important;
+}
+
+/* Shake nur für covered */
+.card.covered.shake { animation: shake 0.15s ease-in-out; }
+
+@keyframes shake {
+  0% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  50% { transform: translateX(3px); }
+  75% { transform: translateX(-3px); }
+  100% { transform: translateX(0); }
+}
+
+/* Deck + Waste Bereich */
+.deck-area {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 60px;
+  margin-top: 10px;
+}
+
+/* Wrapper sorgt dafür, dass die Zahl unter dem Deck steht */
+.deck-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.deck, .waste {
+  width: 70px;
+  height: 100px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.deck {
+  background: linear-gradient(180deg, #ffffff, #ececec);
+  border: 2px solid #888;
+  box-shadow: var(--elev);
+  cursor: pointer;
+  transform-style: preserve-3d;
+}
+.deck:hover { transform: translateY(-2px); box-shadow: var(--elev-strong); }
+.deck:active { transform: translateY(0); }
+
+#stockCount {
+  color: #fff;
   font-weight: 700;
-  font-size: 14px;
-  letter-spacing: .2px;
-  text-shadow: 0 1px 0 rgba(0,0,0,.6);
-  transform: translate(-50%, -14px);
-  animation: floatUp 900ms ease forwards;
-  box-shadow: 0 6px 16px rgba(0,0,0,.35);
-  white-space: nowrap;
-}
-.score-popup.win { color: var(--popup-win); border-color: rgba(56,209,138,.28); }
-.score-popup.penalty { color: var(--popup-penalty); border-color: rgba(255,90,112,.28); }
-@keyframes floatUp {
-  0% { opacity: 0; transform: translate(-50%, -4px) scale(.95); }
-  12% { opacity: 1; }
-  60% { opacity: 1; transform: translate(-50%, -28px) scale(1); }
-  100% { opacity: 0; transform: translate(-50%, -46px) scale(.98); }
+  text-shadow: 0 1px 0 rgba(0,0,0,0.5);
+  user-select: none;
 }
 
-/* ====== Zeitleiste ====== */
-#timebar {
+.waste {
+  background: transparent;
+  border: none;
+}
+
+.waste-card {
   position: absolute;
-  left: 16px; right: 16px; bottom: 16px;
+  top: 0;
+  left: 0;
+  transform-style: preserve-3d;
+}
+
+/* Deal/Flip Animation für die gezogene Karte */
+.deal-anim { animation: dealFromDeck 280ms ease-out; }
+.flip-anim { animation: flipCard 360ms ease-in-out 80ms; }
+
+@keyframes dealFromDeck {
+  0%   { transform: translate(-8px, -8px) scale(0.9); opacity: 0.0; }
+  60%  { transform: translate(-2px, -2px) scale(1.02); opacity: 1; }
+  100% { transform: translate(0, 0) scale(1); }
+}
+@keyframes flipCard {
+  0%   { transform: rotateY(90deg); }
+  100% { transform: rotateY(0deg); }
+}
+
+/* Win/Lose Message */
+.win-message {
+  position: fixed;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: gold;
+  color: #222;
+  padding: 30px 50px;
+  border-radius: 12px;
+  font-size: 2rem;
+  box-shadow: 0 0 20px rgba(0,0,0,0.3);
+  z-index: 1000;
+  animation: fadeIn 0.6s ease-out;
+  text-align: center;
+  white-space: pre-line;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translate(-50%, -60%); }
+  to { opacity: 1; transform: translate(-50%, -50%); }
+}
+
+/* Tutorial Overlay (EN) */
+.tutorial-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1300;
+}
+.tutorial-overlay.hidden { display: none; }
+
+.tutorial-card {
+  width: min(640px, 92vw);
+  background: linear-gradient(180deg, #ffffff, #f4f4f4);
+  border: 1px solid rgba(0,0,0,0.12);
+  border-radius: 16px;
+  box-shadow: var(--elev-strong);
+  padding: 20px 22px;
+  color: #222;
+}
+.tutorial-card h2 { margin: 0 0 10px; }
+.tutorial-card ul { margin: 0 0 16px 18px; }
+.tutorial-card li { margin: 6px 0; }
+
+/* Punkte-Popups */
+.points-pop {
+  position: fixed;
+  pointer-events: none;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 16px;
+  box-shadow: var(--popup-shadow);
+  animation: popFloat 900ms ease forwards;
+  z-index: 1500;
+  background: rgba(255,255,255,0.95);
+}
+.points-pop.pos { color: var(--pos); border: 1px solid rgba(46,204,113,0.6); }
+.points-pop.neg { color: var(--neg); border: 1px solid rgba(231,76,60,0.6); }
+
+@keyframes popFloat {
+  0%   { transform: translateY(0) scale(0.9); opacity: 0; }
+  12%  { transform: translateY(-6px) scale(1); opacity: 1; }
+  70%  { opacity: 1; }
+  100% { transform: translateY(-22px) scale(1); opacity: 0; }
+}
+
+/* Sicherheitsnetz: niemals transparente covered Karten */
+.card.covered { opacity: 1 !important; }
+
+/* ===== Zeitleiste unten im Spielfeld ===== */
+#timebar {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 12px;
+  width: min(920px, 88vw);
   height: 16px;
   border-radius: 999px;
   background: rgba(10,18,14,.55);
   border: 1px solid rgba(53,88,70,.6);
   overflow: hidden;
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.05), 0 8px 24px rgba(0,0,0,.25);
+  z-index: 1200;
 }
 #timebar .fill {
   height: 100%;
@@ -153,35 +353,4 @@ html, body {
   color: #0f1b15;
   text-shadow: 0 1px 0 rgba(255,255,255,.2);
   mix-blend-mode: soft-light;
-}
-
-/* ====== End-Overlay ====== */
-#endOverlay {
-  position: absolute;
-  inset: 0;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  background: rgba(6,12,9,.62);
-  backdrop-filter: blur(3px);
-  z-index: 999;
-}
-#endOverlay.show { display: flex; }
-#endOverlay .panel {
-  padding: 20px 24px;
-  border-radius: 16px;
-  background: rgba(18,35,24,.9);
-  border: 1px solid rgba(235,255,244,.14);
-  box-shadow: 0 12px 36px rgba(0,0,0,.35);
-  text-align: center;
-}
-#endOverlay .panel h2 { margin: 0 0 8px; font-size: 20px; }
-#endOverlay .panel p { margin: 0 0 14px; color: #e6f0eb; }
-#endOverlay .panel button {
-  padding: 8px 12px;
-  border-radius: 12px;
-  background: #2a5c45;
-  border: 1px solid #3b7a5b;
-  color: #e9f7f0;
-  cursor: pointer;
 }
