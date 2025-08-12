@@ -9,6 +9,10 @@ html, body {
   background-size: cover;
   background-position: center;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+
+  /* Mobile Touch UX */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 :root {
@@ -40,17 +44,12 @@ html, body {
   --popup-shadow: 0 6px 18px rgba(0,0,0,0.28);
 }
 
-/* Alle Varianten eines möglichen "Stock:"-Labels sicher ausblenden */
+/* "Stock:"-Label kompromisslos verstecken */
 #stockLabel,
 .stock-label,
 .stock-title,
 [data-label="stock"],
-[data-stock-label] {
-  display: none !important;
-}
-
-/* Zusätzlicher Fallback: falls ein fremdes Label im HUD steckt,
-   verstecke jeden direkten Text-Node mit "Stock:" über CSS. */
+[data-stock-label] { display: none !important; }
 .score-hud span:has(> .stock-label) { display: none !important; }
 
 .game-container {
@@ -84,6 +83,10 @@ html, body {
   cursor: pointer;
   box-shadow: var(--elev);
   transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.2s ease;
+
+  /* Mobile */
+  user-select: none;
+  touch-action: manipulation;
 }
 .ui-button:hover { transform: translateY(-1px); box-shadow: var(--elev-strong); }
 .ui-button:active { transform: translateY(0); }
@@ -105,7 +108,10 @@ html, body {
   backdrop-filter: blur(6px);
   box-shadow: var(--elev);
   z-index: 1100;
+
+  user-select: none;
 }
+
 .score-hud span strong {
   color: #fff;
   text-shadow: 0 1px 0 rgba(0,0,0,0.2);
@@ -152,6 +158,11 @@ html, body {
     radial-gradient(120% 90% at 20% 10%, rgba(255,255,255,0.85), rgba(255,255,255,0) 60%),
     radial-gradient(120% 90% at 80% 90%, rgba(0,0,0,0.07), rgba(0,0,0,0) 60%);
   box-shadow: 0 2px 0 rgba(0,0,0,0.15), var(--elev);
+
+  /* Mobile Hit & Feel */
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  touch-action: manipulation;
 }
 
 /* Nie transparent, nur visuell grauer wenn unselectable */
@@ -196,7 +207,6 @@ html, body {
   margin-top: 10px;
 }
 
-/* Wrapper sorgt dafür, dass die Zahl unter dem Deck steht */
 .deck-wrap {
   display: flex;
   flex-direction: column;
@@ -212,6 +222,9 @@ html, body {
   align-items: center;
   justify-content: center;
   position: relative;
+
+  user-select: none;
+  touch-action: manipulation;
 }
 
 .deck {
@@ -243,7 +256,7 @@ html, body {
   transform-style: preserve-3d;
 }
 
-/* Deal/Flip Animation für die gezogene Karte */
+/* Deal/Flip Animation */
 .deal-anim { animation: dealFromDeck 280ms ease-out; }
 .flip-anim { animation: flipCard 360ms ease-in-out 80ms; }
 
@@ -329,17 +342,17 @@ html, body {
   100% { transform: translateY(-22px) scale(1); opacity: 0; }
 }
 
-/* Sicherheitsnetz: niemals transparente covered Karten */
+/* Nie transparente covered Karten */
 .card.covered { opacity: 1 !important; }
 
-/* ===== Zeitleiste unten im Spielfeld (kleiner) ===== */
+/* ===== Kleine Zeitleiste ohne Text ===== */
 #timebar {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
   bottom: 12px;
-  width: min(520px, 60vw);  /* deutlich kleiner */
-  height: 10px;             /* niedriger */
+  width: min(520px, 60vw);
+  height: 10px;
   border-radius: 999px;
   background: rgba(10,18,14,.55);
   border: 1px solid rgba(53,88,70,.6);
@@ -350,17 +363,8 @@ html, body {
 #timebar .fill {
   height: 100%;
   width: 100%;
-  background: #41c77d;            /* wird per JS dynamisch zu Gelb/Rot */
+  background: #41c77d; /* ändert sich per JS zu Gelb/Rot */
   transition: width .12s linear, background-color .2s linear;
 }
-#timebar .label {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-size: 11px;
-  font-weight: 800;
-  color: #0f1b15;
-  text-shadow: 0 1px 0 rgba(255,255,255,.25);
-  mix-blend-mode: soft-light;
-}
+/* Falls ein Label aus älteren Builds noch existiert: verstecken */
+#timebar .label { display: none !important; }
