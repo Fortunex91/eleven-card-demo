@@ -20,6 +20,9 @@ html, body {
   --elev: 0 6px 18px rgba(0,0,0,0.25);
   --elev-strong: 0 10px 26px rgba(0,0,0,0.35);
   --accent: #ffdd57;
+  --pos: #2ecc71;
+  --neg: #e74c3c;
+  --popup-shadow: 0 6px 18px rgba(0,0,0,0.28);
 }
 
 .game-container {
@@ -80,20 +83,13 @@ html, body {
   text-shadow: 0 1px 0 rgba(0,0,0,0.2);
 }
 
-.score-display { /* legacy */
-  font-size: 24px;
-  font-weight: bold;
-  color: #fff;
-  margin-bottom: 20px;
-}
-
 .peak-row {
   display: flex;
   justify-content: space-evenly;
   width: 80%;
   margin-top: 28px;
   margin-bottom: 40px;
-  position: relative; /* Referenz für HUD falls nötig */
+  position: relative;
 }
 
 .peak {
@@ -172,7 +168,7 @@ html, body {
   margin-top: 10px;
 }
 
-/* Wrapper sorgt dafür, dass der Stock-Count unter dem Deck steht */
+/* Wrapper sorgt dafür, dass die Zahl unter dem Deck steht */
 .deck-wrap {
   display: flex;
   flex-direction: column;
@@ -237,6 +233,7 @@ html, body {
   100% { transform: rotateY(0deg); }
 }
 
+/* Win/Lose Message */
 .win-message {
   position: fixed;
   top: 40%;
@@ -285,25 +282,27 @@ html, body {
 .tutorial-card ul { margin: 0 0 16px 18px; }
 .tutorial-card li { margin: 6px 0; }
 
-/* Bonus-Badge */
-.score-badge {
+/* Punkte-Popups */
+.points-pop {
   position: fixed;
-  top: 16px;
-  right: 16px;
-  background: var(--accent);
-  color: #222;
-  padding: 8px 12px;
+  pointer-events: none;
+  padding: 4px 8px;
   border-radius: 999px;
-  font-weight: 700;
-  box-shadow: var(--elev);
-  animation: badgePop 1.2s ease forwards;
-  z-index: 1400;
+  font-weight: 800;
+  font-size: 16px;
+  box-shadow: var(--popup-shadow);
+  animation: popFloat 900ms ease forwards;
+  z-index: 1500;
+  background: rgba(255,255,255,0.95);
 }
-@keyframes badgePop {
-  0% { transform: translateY(-8px); opacity: 0; }
-  10% { transform: translateY(0); opacity: 1; }
-  80% { opacity: 1; }
-  100% { transform: translateY(-8px); opacity: 0; }
+.points-pop.pos { color: var(--pos); border: 1px solid rgba(46,204,113,0.6); }
+.points-pop.neg { color: var(--neg); border: 1px solid rgba(231,76,60,0.6); }
+
+@keyframes popFloat {
+  0%   { transform: translateY(0) scale(0.9); opacity: 0; }
+  12%  { transform: translateY(-6px) scale(1); opacity: 1; }
+  70%  { opacity: 1; }
+  100% { transform: translateY(-22px) scale(1); opacity: 0; }
 }
 
 /* Sicherheitsnetz: niemals transparente covered Karten */
