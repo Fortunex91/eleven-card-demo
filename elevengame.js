@@ -12,6 +12,7 @@ window.addEventListener("DOMContentLoaded", () => {
   const MAX_ROUNDS            = 7;
   const WRONG_COMBO_PENALTY   = -5;
   const PEAK_CLEAR_BONUS      = 50;
+  const ROW_CLEAR_BONUS       = 20; // NEU: kleiner Row-Bonus
   const WIN_BONUS             = 100;
 
   function getRoundTimeLimitMs(round){ return 90_000 - (round-1)*5_000; } // 90→60
@@ -27,12 +28,14 @@ window.addEventListener("DOMContentLoaded", () => {
   let totalScore   = 0;
   let streak       = 0;
   const clearedPeaks = new Set();
+  const clearedRows  = new Set();   // NEU: für Row-Clear Effekte
   const roundHistory = [];          // [{round,status,score,timeMs,stockLeft}]
 
   // Transitions / guards
   let roundEnding = false;          // avoid double endRound calls
   let roundTransitionInProgress = false; // avoid double dealNewRound()
   let overlayTimer = null;          // auto-close timer for round overlay
+  let hasShownAnyRoundSummary = false; // BUGFIX: kein Popup zu Beginn
 
   // Timer
   let timer = null;
@@ -180,25 +183,58 @@ window.addEventListener("DOMContentLoaded", () => {
     ghost.style.left = (from.x - parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--card-w'))/2) + "px";
     ghost.style.top  = (from.y - parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--card-h'))/2) + "px";
 
-    // Anfangsposition
     ghost.style.transform = `translate(0px, 0px)`;
     document.body.appendChild(ghost);
 
-    // Zieloffset
     const dx = to.x - from.x;
     const dy = to.y - from.y;
 
-    // nächste Animation-Frame abwarten → dann bewegen
     requestAnimationFrame(() => {
       ghost.style.transform = `translate(${dx}px, ${dy}px)`;
     });
 
-    // nach Laufzeit entfernen
     const done = () => {
       ghost.remove();
       callback?.();
     };
-    setTimeout(done, 280); // etwas länger als CSS-Transition (260ms) zur Sicherheit
+    setTimeout(done, 280);
+  }
+
+  // ---------- FX (Step 2) ----------
+  function addOnceClass(el, cls, ms=480){
+    if(!el) return;
+    el.classList.add(cls);
+    window.setTimeout(()=> el.classList.remove(cls), ms);
+  }
+  function popupAt(x,y,text,type="pos"){
+    const pop = document.createElement("div");
+    pop.className = `points-pop ${type}`;
+    pop.textContent = text;
+    document.body.appendChild(pop);
+    const r = pop.getBoundingClientRect();
+    pop.style.left = `${Math.round(x - r.width/2)}px`;
+    pop.style.top  = `${Math.round(y - r.height)}px`;
+    pop.addEventListener("animationend", ()=> pop.remove(), {once:true});
+  }
+  function popupOnEl(el,text,type="pos"){
+    const r = el.getBoundingClientRect();
+    popupAt(r.left + r.width/2, r.top, text, type);
+  }
+  function sparkleBurst(x, y, count = 8) {
+    const root = document.body;
+    const rootRect = root.getBoundingClientRect?.() || {left:0,top:0};
+    for (let i=0;i<count;i++){
+      const s = document.createElement("div");
+      s.className = "sparkle";
+      s.style.left = `${x - rootRect.left}px`;
+      s.style.top  = `${y - rootRect.top}px`;
+      const ang = (Math.PI * 2) * (i / count);
+      const dist = 30 + Math.random()*20;
+      s.style.setProperty("--sx", `${Math.cos(ang)*dist}px`);
+      s.style.setProperty("--sy", `${Math.sin(ang)*dist}px`);
+      root.appendChild(s);
+      setTimeout(()=> s.remove(), 700);
+    }
   }
 
   // ---------- Stock / Waste ----------
@@ -343,6 +379,7 @@ window.addEventListener("DOMContentLoaded", () => {
   function buildBoard(){
     if(!peakRow) return;
     peakRow.innerHTML = "";
+    clearedRows.clear();
     for(let d=0; d<NUM_DIAMONDS; d++) peakRow.appendChild(createDiamond(d));
     updateCoverageState();
   }
@@ -378,7 +415,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
     if(card.classList.contains("field")){
       if(card.classList.contains("removed")) return;
-      if(card.classList.contains("covered")){ shake(card); return; }
+      if(card.classList.contains("covered")){ shake(card); addOnceClass(card,"glow-red"); return; }
       card.classList.toggle("selected");
       checkSelected();
     } else if(card.classList.contains("waste-card")){
@@ -409,41 +446,6 @@ window.addEventListener("DOMContentLoaded", () => {
     el.classList.add("shake");
     el.addEventListener("animationend", ()=> el.classList.remove("shake"), {once:true});
   }
-  const activePopups = [];
-  function popupAt(x,y,text,type="pos"){
-    const pop = document.createElement("div");
-    pop.className = `points-pop ${type}`;
-    pop.textContent = text;
-    document.body.appendChild(pop);
-    const r = pop.getBoundingClientRect();
-    pop.style.left = `${Math.round(x - r.width/2)}px`;
-    pop.style.top  = `${Math.round(y - r.height)}px`;
-    requestAnimationFrame(()=>avoidOverlap(pop));
-    activePopups.push(pop);
-    pop.addEventListener("animationend", ()=>{ pop.remove(); const i=activePopups.indexOf(pop); if(i>=0) activePopups.splice(i,1); }, {once:true});
-  }
-  function avoidOverlap(el){
-    const MAX=90, STEP=18;
-    let n=0;
-    while(n<=MAX && activePopups.some(other=> other!==el && isOver(el,other))){
-      n+=STEP;
-      el.style.top = (parseFloat(el.style.top||"0") - STEP) + "px";
-    }
-  }
-  function isOver(a,b){
-    const ra=a.getBoundingClientRect(), rb=b.getBoundingClientRect();
-    return !(ra.left>rb.right || ra.right<rb.left || ra.top>rb.bottom || ra.bottom<rb.top);
-  }
-  function popupOnEl(el,text,type="pos"){
-    const r = el.getBoundingClientRect();
-    popupAt(r.left+r.width/2, r.top, text, type);
-  }
-  function centerOf(els){
-    if(!els || !els.length) return {x:window.innerWidth/2, y:80};
-    let L=Infinity,T=Infinity,R=-Infinity,B=-Infinity;
-    els.forEach(el=>{const r=el.getBoundingClientRect(); L=Math.min(L,r.left); T=Math.min(T,r.top); R=Math.max(R,r.right); B=Math.max(B,r.bottom);});
-    return {x:(L+R)/2, y:T-6};
-  }
 
   // ---------- Scoring & Combos ----------
   function addScore(delta,{penalty=false}={}){
@@ -453,6 +455,28 @@ window.addEventListener("DOMContentLoaded", () => {
     updateRoundHud();
   }
 
+  function rowIndexFromCard(card){
+    return parseInt(card?.dataset?.row || "-1", 10);
+  }
+  function tryRowClearEffect(){
+    // prüfe, ob eine ganze Board-Row (global) leer ist
+    const maxRows = Math.max(...rowsPerDiamond);
+    for(let r=0;r<maxRows;r++){
+      if(clearedRows.has(r)) continue;
+      const remaining = document.querySelectorAll(`.card.field[data-row="${r}"]:not(.removed)`);
+      if(remaining.length===0){
+        clearedRows.add(r);
+        // Sparkle + Bonuspopup mittig
+        const area = peakRow?.getBoundingClientRect?.();
+        const cx = area ? (area.left+area.width/2) : (window.innerWidth/2);
+        const cy = area ? (area.top + r * 22 + 40) : 120;
+        sparkleBurst(cx, cy, 12);
+        popupAt(cx, cy-10, `Row +${Math.round(ROW_CLEAR_BONUS * getRoundMultiplier(currentRound))}`, "bonus");
+        addScore(ROW_CLEAR_BONUS);
+      }
+    }
+  }
+
   function checkSelected(){
     const selected = Array.from(document.querySelectorAll(".card.selected"));
     if(selected.length===0) return;
@@ -460,8 +484,10 @@ window.addEventListener("DOMContentLoaded", () => {
     const total = selected.map(el=>valNum(el.textContent)).reduce((a,b)=>a+b,0);
 
     if(total>11){
-      const c=centerOf(selected);
-      popupAt(c.x,c.y, `${WRONG_COMBO_PENALTY}`, "neg");
+      // Fehlversuch → rot + shake + Malus
+      selected.forEach(el => { addOnceClass(el,"glow-red"); shake(el); });
+      const c = getCenter(selected[0]);
+      popupAt(c.x, c.y-10, `${WRONG_COMBO_PENALTY}`, "neg");
       selected.forEach(el=>el.classList.remove("selected"));
       addScore(WRONG_COMBO_PENALTY,{penalty:true});
       return;
@@ -474,18 +500,26 @@ window.addEventListener("DOMContentLoaded", () => {
     const base=10, perField=2*fieldCards.length, streakBonus=2*streak;
     const movePoints = base + perField + streakBonus;
 
-    fieldCards.forEach(el=> popupOnEl(el, "+2", "pos"));
-    const c=centerOf(selected);
-    popupAt(c.x,c.y, `+${Math.round(movePoints * getRoundMultiplier(currentRound))}`, "pos");
-    if(streakBonus>0) popupAt(c.x,c.y-22, `+${Math.round(streakBonus * getRoundMultiplier(currentRound))} streak`, "pos");
+    // Visuelles Feedback: valid → grün + shrink-out + Popups
+    selected.forEach(el => addOnceClass(el, "glow-green"));
+    fieldCards.forEach(el => popupOnEl(el, "+2", "pos"));
 
-    // remove selected cards
+    const cc = getCenter(selected[0]);
+    popupAt(cc.x, cc.y-28, `+${Math.round(movePoints * getRoundMultiplier(currentRound))}`, "pos");
+    if(streakBonus>0) popupAt(cc.x, cc.y-46, `+${Math.round(streakBonus * getRoundMultiplier(currentRound))} streak`, "pos");
+
+    // remove selected cards mit Shrink+Fade
     selected.forEach(card=>{
       card.classList.remove("selected");
       if(card.classList.contains("field")){
         card.classList.remove("clickable","unselectable");
-        card.classList.add("removed");
-        card.style.visibility="hidden";
+        addOnceClass(card, "shrink-out", 200);
+        setTimeout(() => {
+          card.classList.add("removed");
+          card.style.visibility="hidden";
+          updateCoverageState();
+          tryRowClearEffect(); // Row-Clear prüfen
+        }, 180);
       } else if(card.classList.contains("waste-card")){
         const i = wasteStack.indexOf(card);
         if(i>=0) wasteStack.splice(i,1);
@@ -518,7 +552,9 @@ window.addEventListener("DOMContentLoaded", () => {
         const area = peakRow?.getBoundingClientRect?.();
         const cx = area ? (area.left+area.width/2) : (window.innerWidth/2);
         const cy = area ? (area.top) : 80;
-        popupAt(cx, cy, `Peak +${Math.round(PEAK_CLEAR_BONUS * getRoundMultiplier(currentRound))}`, "pos");
+        // Sparkles + Bonus (gold)
+        sparkleBurst(cx, cy, 14);
+        popupAt(cx, cy-12, `Peak +${Math.round(PEAK_CLEAR_BONUS * getRoundMultiplier(currentRound))}`, "bonus");
         addScore(PEAK_CLEAR_BONUS);
       }
     }
@@ -539,9 +575,9 @@ window.addEventListener("DOMContentLoaded", () => {
     const cx = area ? (area.left+area.width/2) : (window.innerWidth/2);
     const cy = area ? (area.top+40) : 120;
 
-    if(timeBonus>0) popupAt(cx-40,cy, `Time +${Math.round(timeBonus*getRoundMultiplier(currentRound))}`, "pos");
-    if(stockBonus>0) popupAt(cx+40,cy, `Stock +${Math.round(stockBonus*getRoundMultiplier(currentRound))}`, "pos");
-    popupAt(cx,cy-20, `Win +${Math.round(WIN_BONUS*getRoundMultiplier(currentRound))}`, "pos");
+    if(timeBonus>0) popupAt(cx-40,cy, `Time +${Math.round(timeBonus*getRoundMultiplier(currentRound))}`, "bonus");
+    if(stockBonus>0) popupAt(cx+40,cy, `Stock +${Math.round(stockBonus*getRoundMultiplier(currentRound))}`, "bonus");
+    popupAt(cx,cy-20, `Win +${Math.round(WIN_BONUS*getRoundMultiplier(currentRound))}`, "bonus");
 
     addScore(timeBonus);
     addScore(stockBonus);
@@ -581,10 +617,18 @@ window.addEventListener("DOMContentLoaded", () => {
 
   // ---------- Round orchestration (AUTO overlay) ----------
   function showRoundSummaryAuto(status, snap){
-    // Create ephemeral overlay just-in-time; auto-close after 4s
+    // BUGFIX: Kein Overlay zu Match-Beginn (nur ab Übergang 1→2)
+    if(!hasShownAnyRoundSummary && currentRound === 1){
+      hasShownAnyRoundSummary = true;
+      // direkt in die nächste Runde – aber Timer pausierte schon in endRound()
+      advanceToNextRound();
+      return;
+    }
+
+    // Timer ist in endRound() pausiert; bleibt pausiert bis Overlay zu
     const ov = document.createElement("div");
     ov.className = "overlay";
-    const title = status === "win" ? "Round Cleared!" : (status === "timeup" ? "Time's up!" : "Round Over");
+    const title = status === "win" ? "Round Cleared!" : (status === "time's up" || status === "timeup" ? "Time's up!" : "Round Over");
     ov.innerHTML = `
       <div class="overlay-content">
         <h2>${title} (Round ${currentRound}/${MAX_ROUNDS})</h2>
@@ -600,6 +644,7 @@ window.addEventListener("DOMContentLoaded", () => {
     if(overlayTimer) { clearTimeout(overlayTimer); overlayTimer = null; }
     overlayTimer = setTimeout(() => {
       ov.remove();
+      // Timer wird erst in dealNewRound() neu gestartet
       advanceToNextRound();
     }, 4000);
   }
@@ -630,7 +675,7 @@ window.addEventListener("DOMContentLoaded", () => {
     if(roundEnding) return; // guard
     roundEnding = true;
 
-    pauseTimer();
+    pauseTimer(); // <<< Timer pausiert während Popup
     clearAllSelections(); // make sure nothing stays selected
 
     const snap = {
@@ -645,7 +690,7 @@ window.addEventListener("DOMContentLoaded", () => {
     updateRoundHud();
 
     if(currentRound < MAX_ROUNDS){
-      showRoundSummaryAuto(status, snap); // 4s auto → next round
+      showRoundSummaryAuto(status, snap); // 4s auto → next round (Timer bleibt pausiert)
     } else {
       gameOver = true;
       setTimeout(() => { showFinalOverlay(); roundEnding = false; }, 200);
@@ -659,7 +704,7 @@ window.addEventListener("DOMContentLoaded", () => {
     currentRound += 1;
     dealNewRound();
 
-    // reset guards after round is fully dealt
+    // reset guards nach Rundendeal
     roundEnding = false;
     roundTransitionInProgress = false;
   }
@@ -668,6 +713,7 @@ window.addEventListener("DOMContentLoaded", () => {
     streak = 0;
     roundScore = 0;
     clearedPeaks.clear();
+    clearedRows.clear();
 
     if(overlayTimer){ clearTimeout(overlayTimer); overlayTimer = null; }
 
@@ -687,7 +733,7 @@ window.addEventListener("DOMContentLoaded", () => {
     }
 
     resetTimerForRound();
-    startTimer();
+    startTimer(); // <<< Timer startet erst NACH dem Popup
     updateRoundHud();
   }
 
@@ -697,6 +743,7 @@ window.addEventListener("DOMContentLoaded", () => {
     if(overlayTimer){ clearTimeout(overlayTimer); overlayTimer = null; }
     roundEnding = false;
     roundTransitionInProgress = false;
+    hasShownAnyRoundSummary = false;
 
     document.querySelectorAll(".overlay").forEach(el => el.remove());
 
@@ -705,6 +752,7 @@ window.addEventListener("DOMContentLoaded", () => {
     roundScore = 0;
     streak = 0;
     clearedPeaks.clear();
+    clearedRows.clear();
     roundHistory.length = 0;
 
     // Reset board & waste
@@ -764,15 +812,10 @@ window.addEventListener("DOMContentLoaded", () => {
     const pct = ms / getRoundTimeLimitMs(currentRound);
     if(fill){
       fill.style.width = Math.max(0, Math.min(100, pct*100)) + "%";
-      fill.style.background = colorForPct(pct);
+      fill.style.backgroundColor = colorForPct(pct);
+      // NEU: Pulsieren in den letzten 15%
+      if(pct < 0.15) fill.classList.add("pulse"); else fill.classList.remove("pulse");
     }
-  }
-
-  // ---------- Coverage helpers ----------
-  function shake(el){
-    if(el.classList.contains("shake")) return;
-    el.classList.add("shake");
-    el.addEventListener("animationend", ()=> el.classList.remove("shake"), {once:true});
   }
 
   // ---------- Game init ----------
@@ -786,7 +829,7 @@ window.addEventListener("DOMContentLoaded", () => {
     animateCardFlight(v, deckEl, wasteEl, () => pushWaste(v));
   }
   resetTimerForRound();
-  startTimer();
+  startTimer(); // läuft beim Start (kein Round-Popup am Anfang)
   updateRoundHud();
 
   window.addEventListener("resize", updateCoverageState, {passive:true});
