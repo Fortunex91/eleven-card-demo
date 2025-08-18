@@ -4,6 +4,44 @@ window.addEventListener("DOMContentLoaded", () => {
   const deckEl    = document.getElementById("deck");
   const wasteEl   = document.getElementById("waste");
 
+  // --- NEU: sicherstellen, dass die richtigen Klassen und der StockCounter korrekt hängen ---
+  (function ensureDeckWasteAndCounter(){
+    if (deckEl) {
+      // Gib dem #deck die Klasse "deck", damit der Kartenrücken via CSS sichtbar wird
+      deckEl.classList.add("deck");
+      // Position relativ, damit #stockCount absolut darunter positioniert werden kann
+      if (getComputedStyle(deckEl).position === "static") {
+        deckEl.style.position = "relative";
+      }
+    }
+    if (wasteEl) {
+      wasteEl.classList.add("waste");
+    }
+    // #stockCount anlegen/umhängen und unten zentriert unter dem Stock platzieren
+    let sc = document.getElementById("stockCount");
+    if (!sc) {
+      sc = document.createElement("div");
+      sc.id = "stockCount";
+    }
+    if (deckEl && sc.parentElement !== deckEl) {
+      deckEl.appendChild(sc);
+    }
+    // Inline-Styles für sichere Platzierung (kein CSS-Update nötig)
+    if (sc) {
+      sc.style.position = "absolute";
+      sc.style.left = "50%";
+      sc.style.transform = "translateX(-50%)";
+      sc.style.bottom = "-18px";       // unter dem Pile
+      sc.style.fontSize = "12px";
+      sc.style.fontWeight = "700";
+      sc.style.color = "#fff";
+      sc.style.textShadow = "0 1px 0 rgba(0,0,0,0.5)";
+      sc.style.userSelect = "none";
+      sc.style.pointerEvents = "none";
+      sc.style.zIndex = "1";
+    }
+  })();
+
   // ---------- Config ----------
   const rowsPerDiamond = [1, 2, 3, 2, 1];
   const NUM_DIAMONDS   = 3;
@@ -12,7 +50,6 @@ window.addEventListener("DOMContentLoaded", () => {
   const MAX_ROUNDS            = 7;
   const WRONG_COMBO_PENALTY   = -5;
   const PEAK_CLEAR_BONUS      = 50;
-  const ROW_CLEAR_BONUS       = 20; // NEU: kleiner Row-Bonus
   const WIN_BONUS             = 100;
 
   function getRoundTimeLimitMs(round){ return 90_000 - (round-1)*5_000; } // 90→60
@@ -28,7 +65,6 @@ window.addEventListener("DOMContentLoaded", () => {
   let totalScore   = 0;
   let streak       = 0;
   const clearedPeaks = new Set();
-  const clearedRows  = new Set();   // NEU: für Row-Clear Effekte
   const roundHistory = [];          // [{round,status,score,timeMs,stockLeft}]
 
   // Transitions / guards
@@ -379,7 +415,6 @@ window.addEventListener("DOMContentLoaded", () => {
   function buildBoard(){
     if(!peakRow) return;
     peakRow.innerHTML = "";
-    clearedRows.clear();
     for(let d=0; d<NUM_DIAMONDS; d++) peakRow.appendChild(createDiamond(d));
     updateCoverageState();
   }
@@ -455,28 +490,6 @@ window.addEventListener("DOMContentLoaded", () => {
     updateRoundHud();
   }
 
-  function rowIndexFromCard(card){
-    return parseInt(card?.dataset?.row || "-1", 10);
-  }
-  function tryRowClearEffect(){
-    // prüfe, ob eine ganze Board-Row (global) leer ist
-    const maxRows = Math.max(...rowsPerDiamond);
-    for(let r=0;r<maxRows;r++){
-      if(clearedRows.has(r)) continue;
-      const remaining = document.querySelectorAll(`.card.field[data-row="${r}"]:not(.removed)`);
-      if(remaining.length===0){
-        clearedRows.add(r);
-        // Sparkle + Bonuspopup mittig
-        const area = peakRow?.getBoundingClientRect?.();
-        const cx = area ? (area.left+area.width/2) : (window.innerWidth/2);
-        const cy = area ? (area.top + r * 22 + 40) : 120;
-        sparkleBurst(cx, cy, 12);
-        popupAt(cx, cy-10, `Row +${Math.round(ROW_CLEAR_BONUS * getRoundMultiplier(currentRound))}`, "bonus");
-        addScore(ROW_CLEAR_BONUS);
-      }
-    }
-  }
-
   function checkSelected(){
     const selected = Array.from(document.querySelectorAll(".card.selected"));
     if(selected.length===0) return;
@@ -518,7 +531,6 @@ window.addEventListener("DOMContentLoaded", () => {
           card.classList.add("removed");
           card.style.visibility="hidden";
           updateCoverageState();
-          tryRowClearEffect(); // Row-Clear prüfen
         }, 180);
       } else if(card.classList.contains("waste-card")){
         const i = wasteStack.indexOf(card);
@@ -620,7 +632,6 @@ window.addEventListener("DOMContentLoaded", () => {
     // BUGFIX: Kein Overlay zu Match-Beginn (nur ab Übergang 1→2)
     if(!hasShownAnyRoundSummary && currentRound === 1){
       hasShownAnyRoundSummary = true;
-      // direkt in die nächste Runde – aber Timer pausierte schon in endRound()
       advanceToNextRound();
       return;
     }
@@ -644,7 +655,6 @@ window.addEventListener("DOMContentLoaded", () => {
     if(overlayTimer) { clearTimeout(overlayTimer); overlayTimer = null; }
     overlayTimer = setTimeout(() => {
       ov.remove();
-      // Timer wird erst in dealNewRound() neu gestartet
       advanceToNextRound();
     }, 4000);
   }
@@ -713,7 +723,6 @@ window.addEventListener("DOMContentLoaded", () => {
     streak = 0;
     roundScore = 0;
     clearedPeaks.clear();
-    clearedRows.clear();
 
     if(overlayTimer){ clearTimeout(overlayTimer); overlayTimer = null; }
 
@@ -752,7 +761,6 @@ window.addEventListener("DOMContentLoaded", () => {
     roundScore = 0;
     streak = 0;
     clearedPeaks.clear();
-    clearedRows.clear();
     roundHistory.length = 0;
 
     // Reset board & waste
@@ -813,7 +821,7 @@ window.addEventListener("DOMContentLoaded", () => {
     if(fill){
       fill.style.width = Math.max(0, Math.min(100, pct*100)) + "%";
       fill.style.backgroundColor = colorForPct(pct);
-      // NEU: Pulsieren in den letzten 15%
+      // Pulsieren in den letzten 15%
       if(pct < 0.15) fill.classList.add("pulse"); else fill.classList.remove("pulse");
     }
   }
