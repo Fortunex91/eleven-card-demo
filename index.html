@@ -31,6 +31,33 @@
     </div>
   </div>
 
+
+  <!-- Round / Total Score HUD -->
+<div id="roundHud">
+  <span id="roundIndicator">Round 1 / 7</span>
+  <span id="totalScore">Total: 0</span>
+</div>
+
+<!-- Zwischenrunde Overlay -->
+<div id="roundOverlay" class="overlay hidden">
+  <div class="overlay-content">
+    <h2 id="roundResultTitle">Round Complete!</h2>
+    <p id="roundBreakdown"></p>
+    <button id="nextRoundBtn">Next Round</button>
+  </div>
+</div>
+
+<!-- Finalscreen -->
+<div id="finalOverlay" class="overlay hidden">
+  <div class="overlay-content">
+    <h2>Game Over</h2>
+    <p id="finalScore"></p>
+    <div id="roundHistoryTable"></div>
+    <button id="restartSeriesBtn">Play Again</button>
+  </div>
+</div>
+
+
   <!-- JavaScript-Datei einbinden -->
   <script src="elevengame.js" defer></script>
 </body>
