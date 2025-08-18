@@ -10,7 +10,7 @@ window.addEventListener("DOMContentLoaded", () => {
   const NUM_DIAMONDS = 3;
   const cardValues = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
   let stock = [];                // via generateBiasedStock()
-  const wasteStack = [];         // Array von .waste-card DOM-Elementen (Stack)
+  const wasteStack = [];         // Array von .waste-card DOM-Elementen (Stack: last = top)
   let gameOver = false;
 
   // Score/Streak & Boni
@@ -186,7 +186,7 @@ window.addEventListener("DOMContentLoaded", () => {
     updateScoreHud();
   }
 
-  // ---------- Tutorial Overlay (Timer/Bonus erwähnt) ----------
+  // ---------- Tutorial Overlay ----------
   function ensureTutorialOverlay() {
     let overlay = document.getElementById("tutorialOverlay");
     const contentList = `
@@ -194,7 +194,7 @@ window.addEventListener("DOMContentLoaded", () => {
       <li>You can also use the top card from the <strong>waste</strong>.</li>
       <li>Greyed cards are covered and cannot be selected until their children are removed.</li>
       <li>Each successful 11 increases your <strong>streak</strong> and grants extra points.</li>
-      <li><strong>Wrong selection &gt; 11</strong> deducts points and is auto‑cleared.</li>
+      <li><strong>Wrong selection &gt; 11</strong> deducts points and is auto-cleared.</li>
       <li>Clear an entire peak to get a <strong>Peak Bonus</strong>.</li>
       <li>A small <strong>time bar</strong> at the bottom counts down <strong>1:30</strong>. When it empties, you <strong>lose</strong>.</li>
       <li>If you <strong>win before it empties</strong>, remaining time yields a <strong>Time Bonus</strong> (+${TIME_BONUS_PER_SEC}/sec) and remaining stock cards grant a <strong>Stock Bonus</strong> (+${STOCK_BONUS_PER_CARD}/card).</li>
@@ -361,7 +361,6 @@ window.addEventListener("DOMContentLoaded", () => {
 
   // Delegation auf dem gesamten Dokument – schneller als mehrere Listener
   const pointerHandler = (ev) => {
-    // Scroll/Gesten unterbinden, damit Android nicht "schluckt"
     ev.preventDefault();
     const target = ev.target;
     handleCardActivation(target);
@@ -382,8 +381,8 @@ window.addEventListener("DOMContentLoaded", () => {
     document.addEventListener("touchstart", touchHandler, { passive: false, capture: true });
   }
 
-  // Deck separat – sofort auf pointerdown reagieren
-  const deckPointer = (e) => { e.preventDefault(); if (!gameOver) drawCard(); };
+  // Deck separat – sofort auf pointerdown reagieren (manuelles Ziehen)
+  const deckPointer = (e) => { e.preventDefault(); if (!gameOver) drawCardFromStockToWaste_Manual(); };
   if (supportsPointer) {
     deckEl.addEventListener("pointerdown", deckPointer, { passive: false });
   } else {
@@ -398,26 +397,30 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   // ---------- Refill (genau 1 Slot/Zug; row-basiert L→R) ----------
-  function refillOneRemovedSlot() {
+  function refillOneRemovedSlotUsingPrevWaste() {
+    // Wird NUR beim manuellen Ziehen genutzt: verbraucht die bisherige Waste-Karte, um EINEN Slot zu füllen.
     const removed = Array.from(document.querySelectorAll(".card.field.removed"));
     if (removed.length === 0) return false;
+    if (wasteStack.length === 0) return false;
+
+    // Gruppiere nach Zeile (via style.top)
     const groupedByRow = {};
     removed.forEach(slot => {
       const top = slot.parentElement?.style?.top || "";
       (groupedByRow[top] ||= []).push(slot);
     });
     const sortedTops = Object.keys(groupedByRow).sort((a, b) => (parseFloat(a) || 0) - (parseFloat(b) || 0));
+
     for (const top of sortedTops) {
       for (const slot of groupedByRow[top]) {
-        if (wasteStack.length === 0) return false;
+        // Verbrauche die bisherige Waste-Top-Karte
         const prev = wasteStack.pop();
         if (prev?.parentElement === wasteEl) wasteEl.removeChild(prev);
+
         slot.classList.remove("removed", "selected", "covered", "unselectable");
-        slot.textContent = prev?.textContent || getRandomCardValue();
+        slot.textContent = prev?.textContent || getRandomCardValue(); // (prev ist normal immer vorhanden)
         slot.style.visibility = "visible";
         updateCoverageState();
-        if (wasteStack.length === 0) ensureWasteCard();
-        if (stock.length === 0) maybeTriggerLoss();
         return true;
       }
     }
@@ -425,11 +428,10 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   // ---------- Waste Helpers ----------
-  function pushWasteCardWithValue(value, source = "stock") {
+  function pushWasteCardWithValue(value) {
     const newCard = document.createElement("div");
     newCard.classList.add("waste-card", "card", "clickable", "deal-anim", "flip-anim");
     newCard.textContent = value;
-    newCard.dataset.source = source;
     newCard.style.zIndex = String(wasteStack.length);
     wasteEl.appendChild(newCard);
     newCard.addEventListener("animationend", () => {
@@ -437,32 +439,29 @@ window.addEventListener("DOMContentLoaded", () => {
     }, { once: true });
     wasteStack.push(newCard);
   }
-  function ensureWasteCard() {
-    if (wasteStack.length > 0) return;
-    const playable = getPlayableFieldValuesWithIds();
-    let value;
-    if (playable.length > 0 && Math.random() < 0.7) {
-      const pick = playable[Math.floor(Math.random() * playable.length)];
-      value = complementFor(pick.v);
-      value = Math.min(10, Math.max(1, value));
-      value = value === 1 ? "A" : String(value);
-    } else {
-      value = getRandomCardValue();
-    }
-    pushWasteCardWithValue(value, "synthetic");
+  function topWasteValueOrNull() {
+    if (wasteStack.length === 0) return null;
+    return getCardNumericValue(wasteStack[wasteStack.length - 1].textContent);
   }
 
-  // ---------- Draw vom Deck ----------
-  function drawCard(initial = false) {
-    if (!initial) {
-      if (streak > 0) { streak = 0; updateScoreHud(); }
-      refillOneRemovedSlot();
-      updateCoverageState();
-    }
+  // ---------- Ziehen vom Stock auf Waste ----------
+  function drawCardFromStockToWaste_Auto() {
+    // Ohne Nebeneffekte (kein Streak-Reset, kein Slot-Refill) – für "nach Kombi mit Waste"
+    if (stock.length === 0) return false;
+    const newCardValue = stock.pop();
+    updateStockCount();
+    pushWasteCardWithValue(newCardValue);
+    return true;
+  }
+  function drawCardFromStockToWaste_Manual() {
+    // Manuelles Ziehen (Deck-Klick): reset Streak, 1 Slot refill mit bisheriger Waste, dann neue Stock-Karte auf Waste
+    if (streak > 0) { streak = 0; updateScoreHud(); }
+    refillOneRemovedSlotUsingPrevWaste();
+    updateCoverageState();
     if (stock.length === 0) { maybeTriggerLoss(); return; }
     const newCardValue = stock.pop();
     updateStockCount();
-    pushWasteCardWithValue(newCardValue, "stock");
+    pushWasteCardWithValue(newCardValue);
     if (stock.length === 0) maybeTriggerLoss();
   }
 
@@ -482,7 +481,9 @@ window.addEventListener("DOMContentLoaded", () => {
     }
     if (total !== 11) return;
 
+    const usedWaste = selectedCards.some(el => el.classList.contains("waste-card"));
     const fieldCards = selectedCards.filter(el => el.classList.contains("field"));
+
     const basePoints = 10;
     const perField = 2 * fieldCards.length;
     const streakBonus = 2 * streak;
@@ -493,6 +494,7 @@ window.addEventListener("DOMContentLoaded", () => {
     spawnPopupAt(center.x, center.y, `+${movePoints}`, "pos");
     if (streakBonus > 0) spawnPopupAt(center.x, center.y - 22, `+${streakBonus} streak`, "pos");
 
+    // Entfernen
     selectedCards.forEach(card => {
       card.classList.remove("selected");
       if (card.classList.contains("field")) {
@@ -512,9 +514,18 @@ window.addEventListener("DOMContentLoaded", () => {
 
     checkAndAwardPeakBonuses();
     updateCoverageState();
-    checkWinCondition();
-    ensureWasteCard();
-    setTimeout(ensureWasteCard, 0);
+    checkWinCondition(); // kann schon zum Win führen
+
+    // --- NEU: Wenn Waste benutzt wurde, automatisch vom Stock nachlegen,
+    //           sonst Waste unverändert lassen. KEIN random/synthetic mehr.
+    if (usedWaste) {
+      if (!drawCardFromStockToWaste_Auto()) {
+        // Stock war leer und Waste soeben verbraucht -> sofortiges Ende nach deiner Regel
+        endNowIfNoWasteAndNoStock();
+      }
+    }
+
+    // Keine Random-Nachlage mehr an irgendeiner Stelle
     if (stock.length === 0) maybeTriggerLoss();
   }
 
@@ -531,60 +542,76 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   // ---------- Win/Lose ----------
-  function checkWinCondition() {
+  function allFieldCleared() {
     const remainingField = document.querySelectorAll(".card.field:not(.removed)");
-    if (remainingField.length === 0) {
-      if (!gameOver) {
-        pauseTimer();
-        const remainingSeconds = Math.ceil(timeRemaining / 1000);
-        const timeBonus = Math.max(0, remainingSeconds * TIME_BONUS_PER_SEC);
-        const stockBonus = Math.max(0, stock.length * STOCK_BONUS_PER_CARD);
-        const area = peakRow?.getBoundingClientRect?.();
-        const cx = area ? (area.left + area.width / 2) : (window.innerWidth / 2);
-        const cy = area ? (area.top + 40) : 120;
-        if (timeBonus > 0) spawnPopupAt(cx - 40, cy, `Time +${timeBonus}`, "pos");
-        if (stockBonus > 0) spawnPopupAt(cx + 40, cy, `Stock +${stockBonus}`, "pos");
-        adjustScore(timeBonus + stockBonus);
-      }
-      adjustScore(WIN_BONUS);
-      spawnCenterPopup(`Win +${WIN_BONUS}`, "pos");
-      showWinMessage();
+    return remainingField.length === 0;
+  }
+  function checkWinCondition() {
+    if (!allFieldCleared()) return;
+    if (!gameOver) {
+      pauseTimer();
+      const remainingSeconds = Math.ceil(timeRemaining / 1000);
+      const timeBonus = Math.max(0, remainingSeconds * TIME_BONUS_PER_SEC);
+      const stockBonus = Math.max(0, stock.length * STOCK_BONUS_PER_CARD);
+      const area = peakRow?.getBoundingClientRect?.();
+      const cx = area ? (area.left + area.width / 2) : (window.innerWidth / 2);
+      const cy = area ? (area.top + 40) : 120;
+      if (timeBonus > 0) spawnPopupAt(cx - 40, cy, `Time +${timeBonus}`, "pos");
+      if (stockBonus > 0) spawnPopupAt(cx + 40, cy, `Stock +${stockBonus}`, "pos");
+      adjustScore(timeBonus + stockBonus);
     }
+    adjustScore(WIN_BONUS);
+    spawnCenterPopup(`Win +${WIN_BONUS}`, "pos");
+    showWinMessage();
   }
 
-  function getPlayableFieldValues() {
-    return Array.from(document.querySelectorAll(".card.field"))
+  function existsAnyElevenCombo() {
+    // Nur relevant, solange (Stock>0) oder (Waste vorhanden) – andernfalls endet das Spiel jetzt sofort (siehe endNowIfNoWasteAndNoStock)
+    const vals = Array.from(document.querySelectorAll(".card.field"))
       .filter(el => !el.classList.contains("removed") && !el.classList.contains("covered"))
       .map(el => getCardNumericValue(el.textContent));
-  }
-  function getPlayableFieldValuesWithIds() {
-    return Array.from(document.querySelectorAll(".card.field"))
-      .filter(el => !el.classList.contains("removed") && !el.classList.contains("covered"))
-      .map(el => ({ v: getCardNumericValue(el.textContent), id: el.id }));
-  }
-  function getTopWasteValueOrNull() {
-    if (wasteStack.length === 0) return null;
-    return getCardNumericValue(wasteStack[wasteStack.length - 1].textContent);
-  }
-  function existsAnyElevenCombo() {
-    const vals = getPlayableFieldValues();
+
+    // Feld+Feld möglich?
     for (let i = 0; i < vals.length; i++) {
       for (let j = i + 1; j < vals.length; j++) {
         if (vals[i] + vals[j] === 11) return true;
       }
     }
-    const wasteTop = getTopWasteValueOrNull();
+    // Waste+Feld möglich?
+    const wasteTop = topWasteValueOrNull();
     if (wasteTop != null) {
       for (const v of vals) if (wasteTop + v === 11) return true;
     }
     return false;
   }
+
+  function endNowIfNoWasteAndNoStock() {
+    // Deine Regel: Wenn stock==0 und waste leer nach Verbrauch -> sofortiges Ende (Win, wenn Feld leer; sonst Lose)
+    if (stock.length === 0 && wasteStack.length === 0) {
+      if (allFieldCleared()) {
+        checkWinCondition(); // führt Win-Flow aus
+      } else {
+        showLoseMessage();
+      }
+    }
+  }
+
   function maybeTriggerLoss() {
     if (gameOver) return;
-    if (stock.length > 0) return;
-    if (existsAnyElevenCombo()) return;
-    showLoseMessage();
+
+    // Priorität 1: Deine neue harte Endbedingung
+    if (stock.length === 0 && wasteStack.length === 0) {
+      if (allFieldCleared()) checkWinCondition();
+      else showLoseMessage();
+      return;
+    }
+
+    // Sonst: Wenn Stock leer und keine 11er-Kombi mehr möglich -> Lose
+    if (stock.length === 0 && !existsAnyElevenCombo()) {
+      showLoseMessage();
+    }
   }
+
   function showWinMessage() {
     if (gameOver) return;
     gameOver = true;
@@ -704,8 +731,13 @@ window.addEventListener("DOMContentLoaded", () => {
     stock = generateBiasedStock(24);
     updateStockCount();
 
-    drawCard(true);
-    ensureWasteCard();
+    // Start: 1 Karte vom Stock auf den Waste
+    if (stock.length > 0) {
+      const v = stock.pop();
+      updateStockCount();
+      pushWasteCardWithValue(v);
+    }
+    // KEIN Random/Synthetic-Nachschub mehr!
 
     resetTimer();
     startTimer();
@@ -725,8 +757,12 @@ window.addEventListener("DOMContentLoaded", () => {
   stock = generateBiasedStock(24);
   updateStockCount();
 
-  drawCard(true);
-  if (wasteStack.length === 0) ensureWasteCard();
+  // Start: 1 Karte vom Stock auf den Waste
+  if (stock.length > 0) {
+    const v = stock.pop();
+    updateStockCount();
+    pushWasteCardWithValue(v);
+  }
 
   resetTimer();
   startTimer();
