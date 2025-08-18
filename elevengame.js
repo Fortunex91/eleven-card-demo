@@ -9,25 +9,30 @@ window.addEventListener("DOMContentLoaded", () => {
   const rowsPerDiamond = [1, 2, 3, 2, 1];
   const NUM_DIAMONDS = 3;
   const cardValues = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
+
+  // 7-Runden-Konfiguration: Zeit sinkt von 90s auf 60s, Multiplier steigt leicht
+  const MAX_ROUNDS = 7;
+  function getRoundTimeLimitMs(round) { return 90_000 - (round - 1) * 5_000; } // 90s → 60s
+  function getRoundMultiplier(round) { return 1.0 + (round - 1) * 0.3; }        // x1.0 → x2.8
+
   let stock = [];                // via generateBiasedStock()
   const wasteStack = [];         // Array von .waste-card DOM-Elementen (Stack: last = top)
-  let gameOver = false;
+  let gameOver = false;          // gesamtes Spiel fertig (nach 7 Runden) ODER harter Abbruch
 
-  // Score/Streak & Boni
-  let score = 0;
-  let streak = 0;
+  // Runden- und Score-Status
+  let currentRound = 1;
+  let totalScore = 0;            // Summe über alle Runden
+  let roundScore = 0;            // nur aktuelle Runde
+  let roundHistory = [];         // [{round, status:"win|lose|timeup", score, timeMs, stockLeft}]
   const WRONG_COMBO_PENALTY = -5;
   const PEAK_CLEAR_BONUS = 50;
   const WIN_BONUS = 100;
   const clearedPeaks = new Set();
 
-  // ---- Timer / Zeitleiste ----
-  const TIME_LIMIT_MS = 90_000;        // 1,5 Minuten
-  const TIME_BONUS_PER_SEC = 5;        // Punkte je verbleibender Sekunde
-  const STOCK_BONUS_PER_CARD = 10;     // Punkte je verbleibender Stock-Karte
+  // ---- Timer / Zeitleiste ---- (pro Runde)
   let timer = null;
   let timeStart = 0;
-  let timeRemaining = TIME_LIMIT_MS;
+  let timeRemaining = getRoundTimeLimitMs(currentRound);
 
   // ---------- Utils ----------
   const supportsPointer = "PointerEvent" in window;
@@ -109,7 +114,7 @@ window.addEventListener("DOMContentLoaded", () => {
     spawnPopupAt(x, y, text, type);
   }
 
-  // ---------- UI: Top-Bar (Tutorial + Restart) ----------
+  // ---------- UI: Top-Bar (Tutorial + Restart + Round/Total HUD) ----------
   function ensureTopBar() {
     let topbar = document.getElementById("topBar");
     if (!topbar) {
@@ -130,7 +135,6 @@ window.addEventListener("DOMContentLoaded", () => {
       btn.textContent = "Tutorial";
       btn.className = "ui-button";
       btn.addEventListener("pointerdown", (e) => { e.preventDefault(); toggleTutorial(); }, { passive: false });
-      // Fallback
       btn.addEventListener("touchstart", (e) => { e.preventDefault(); toggleTutorial(); }, { passive: false });
       bar.appendChild(btn);
     }
@@ -145,8 +149,8 @@ window.addEventListener("DOMContentLoaded", () => {
       btn.type = "button";
       btn.textContent = "Restart";
       btn.className = "ui-button";
-      btn.addEventListener("pointerdown", (e) => { e.preventDefault(); restartGame(); }, { passive: false });
-      btn.addEventListener("touchstart", (e) => { e.preventDefault(); restartGame(); }, { passive: false });
+      btn.addEventListener("pointerdown", (e) => { e.preventDefault(); restartGameFully(); }, { passive: false });
+      btn.addEventListener("touchstart", (e) => { e.preventDefault(); restartGameFully(); }, { passive: false });
       bar.appendChild(btn);
     } else if (!btn.isConnected) {
       bar.appendChild(btn);
@@ -154,7 +158,7 @@ window.addEventListener("DOMContentLoaded", () => {
     return btn;
   }
 
-  // ---------- Score HUD ----------
+  // ---------- Score & Round HUD ----------
   function ensureScoreHud() {
     let hud = document.getElementById("scoreHud");
     if (!hud) {
@@ -162,7 +166,9 @@ window.addEventListener("DOMContentLoaded", () => {
       hud.id = "scoreHud";
       hud.className = "score-hud";
       hud.innerHTML = `
-        <span>Score: <strong id="scoreValue">0</strong></span>
+        <span>Round: <strong id="roundValue">1/${MAX_ROUNDS}</strong></span>
+        <span>Round Score: <strong id="scoreValue">0</strong></span>
+        <span>Total: <strong id="totalValue">0</strong></span>
         <span>Streak: <strong id="streakValue">0</strong></span>
       `;
       if (peakRow && peakRow.parentElement) {
@@ -174,15 +180,26 @@ window.addEventListener("DOMContentLoaded", () => {
     updateScoreHud();
     return hud;
   }
+  let streak = 0;
   function updateScoreHud() {
     const s = document.getElementById("scoreValue");
     const st = document.getElementById("streakValue");
-    if (s) s.textContent = String(score);
+    const rd = document.getElementById("roundValue");
+    const tot = document.getElementById("totalValue");
+    if (s) s.textContent = String(roundScore);
     if (st) st.textContent = String(streak);
+    if (rd) rd.textContent = `${currentRound}/${MAX_ROUNDS}`;
+    if (tot) tot.textContent = String(totalScore);
   }
-  function adjustScore(delta) {
-    score += delta;
-    if (score < 0) score = 0;
+
+  // Score-Helfer: Multiplikator pro Runde nur auf positive Punkte
+  function addScore(delta, { penalty = false } = {}) {
+    let effective = delta;
+    if (!penalty && delta > 0) {
+      effective = Math.round(delta * getRoundMultiplier(currentRound));
+    }
+    roundScore += effective;
+    if (roundScore < 0) roundScore = 0;
     updateScoreHud();
   }
 
@@ -196,8 +213,8 @@ window.addEventListener("DOMContentLoaded", () => {
       <li>Each successful 11 increases your <strong>streak</strong> and grants extra points.</li>
       <li><strong>Wrong selection &gt; 11</strong> deducts points and is auto-cleared.</li>
       <li>Clear an entire peak to get a <strong>Peak Bonus</strong>.</li>
-      <li>A small <strong>time bar</strong> at the bottom counts down <strong>1:30</strong>. When it empties, you <strong>lose</strong>.</li>
-      <li>If you <strong>win before it empties</strong>, remaining time yields a <strong>Time Bonus</strong> (+${TIME_BONUS_PER_SEC}/sec) and remaining stock cards grant a <strong>Stock Bonus</strong> (+${STOCK_BONUS_PER_CARD}/card).</li>
+      <li>A small <strong>time bar</strong> at the bottom counts down the round time. When it empties, you <strong>lose the round</strong>.</li>
+      <li>Later rounds have <strong>less time</strong> and a <strong>higher score multiplier</strong>.</li>
     `;
     if (!overlay) {
       overlay = document.createElement("div");
@@ -213,12 +230,8 @@ window.addEventListener("DOMContentLoaded", () => {
       document.body.appendChild(overlay);
       overlay.querySelector("#tutorialClose").addEventListener("pointerdown", (e) => { e.preventDefault(); toggleTutorial(); }, { passive: false });
       overlay.querySelector("#tutorialClose").addEventListener("touchstart", (e) => { e.preventDefault(); toggleTutorial(); }, { passive: false });
-      overlay.addEventListener("pointerdown", (e) => {
-        if (e.target === overlay) { e.preventDefault(); toggleTutorial(); }
-      }, { passive: false });
-      overlay.addEventListener("touchstart", (e) => {
-        if (e.target === overlay) { e.preventDefault(); toggleTutorial(); }
-      }, { passive: false });
+      overlay.addEventListener("pointerdown", (e) => { if (e.target === overlay) { e.preventDefault(); toggleTutorial(); } }, { passive: false });
+      overlay.addEventListener("touchstart", (e) => { if (e.target === overlay) { e.preventDefault(); toggleTutorial(); } }, { passive: false });
     } else {
       const ul = overlay.querySelector("ul");
       if (ul) ul.innerHTML = contentList;
@@ -359,35 +372,20 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Delegation auf dem gesamten Dokument – schneller als mehrere Listener
-  const pointerHandler = (ev) => {
-    ev.preventDefault();
-    const target = ev.target;
-    handleCardActivation(target);
-  };
+  const pointerHandler = (ev) => { ev.preventDefault(); handleCardActivation(ev.target); };
   const touchHandler = (ev) => {
     ev.preventDefault();
     const touch = ev.changedTouches ? ev.changedTouches[0] : null;
-    const target = document.elementFromPoint(
-      touch ? touch.clientX : 0,
-      touch ? touch.clientY : 0
-    ) || ev.target;
+    const target = document.elementFromPoint(touch ? touch.clientX : 0, touch ? touch.clientY : 0) || ev.target;
     handleCardActivation(target);
   };
+  if (supportsPointer) document.addEventListener("pointerdown", pointerHandler, { passive: false, capture: true });
+  else document.addEventListener("touchstart", touchHandler, { passive: false, capture: true });
 
-  if (supportsPointer) {
-    document.addEventListener("pointerdown", pointerHandler, { passive: false, capture: true });
-  } else {
-    document.addEventListener("touchstart", touchHandler, { passive: false, capture: true });
-  }
-
-  // Deck separat – sofort auf pointerdown reagieren (manuelles Ziehen)
+  // Deck: manuelles Ziehen
   const deckPointer = (e) => { e.preventDefault(); if (!gameOver) drawCardFromStockToWaste_Manual(); };
-  if (supportsPointer) {
-    deckEl.addEventListener("pointerdown", deckPointer, { passive: false });
-  } else {
-    deckEl.addEventListener("touchstart", deckPointer, { passive: false });
-  }
+  if (supportsPointer) deckEl.addEventListener("pointerdown", deckPointer, { passive: false });
+  else deckEl.addEventListener("touchstart", deckPointer, { passive: false });
 
   function triggerShake(el) {
     if (!el.classList.contains("covered") || el.classList.contains("shake")) return;
@@ -398,12 +396,10 @@ window.addEventListener("DOMContentLoaded", () => {
 
   // ---------- Refill (genau 1 Slot/Zug; row-basiert L→R) ----------
   function refillOneRemovedSlotUsingPrevWaste() {
-    // Wird NUR beim manuellen Ziehen genutzt: verbraucht die bisherige Waste-Karte, um EINEN Slot zu füllen.
     const removed = Array.from(document.querySelectorAll(".card.field.removed"));
     if (removed.length === 0) return false;
     if (wasteStack.length === 0) return false;
 
-    // Gruppiere nach Zeile (via style.top)
     const groupedByRow = {};
     removed.forEach(slot => {
       const top = slot.parentElement?.style?.top || "";
@@ -413,12 +409,11 @@ window.addEventListener("DOMContentLoaded", () => {
 
     for (const top of sortedTops) {
       for (const slot of groupedByRow[top]) {
-        // Verbrauche die bisherige Waste-Top-Karte
         const prev = wasteStack.pop();
         if (prev?.parentElement === wasteEl) wasteEl.removeChild(prev);
 
         slot.classList.remove("removed", "selected", "covered", "unselectable");
-        slot.textContent = prev?.textContent || getRandomCardValue(); // (prev ist normal immer vorhanden)
+        slot.textContent = prev?.textContent || getRandomCardValue();
         slot.style.visibility = "visible";
         updateCoverageState();
         return true;
@@ -434,9 +429,7 @@ window.addEventListener("DOMContentLoaded", () => {
     newCard.textContent = value;
     newCard.style.zIndex = String(wasteStack.length);
     wasteEl.appendChild(newCard);
-    newCard.addEventListener("animationend", () => {
-      newCard.classList.remove("deal-anim", "flip-anim");
-    }, { once: true });
+    newCard.addEventListener("animationend", () => newCard.classList.remove("deal-anim", "flip-anim"), { once: true });
     wasteStack.push(newCard);
   }
   function topWasteValueOrNull() {
@@ -446,7 +439,6 @@ window.addEventListener("DOMContentLoaded", () => {
 
   // ---------- Ziehen vom Stock auf Waste ----------
   function drawCardFromStockToWaste_Auto() {
-    // Ohne Nebeneffekte (kein Streak-Reset, kein Slot-Refill) – für "nach Kombi mit Waste"
     if (stock.length === 0) return false;
     const newCardValue = stock.pop();
     updateStockCount();
@@ -454,7 +446,6 @@ window.addEventListener("DOMContentLoaded", () => {
     return true;
   }
   function drawCardFromStockToWaste_Manual() {
-    // Manuelles Ziehen (Deck-Klick): reset Streak, 1 Slot refill mit bisheriger Waste, dann neue Stock-Karte auf Waste
     if (streak > 0) { streak = 0; updateScoreHud(); }
     refillOneRemovedSlotUsingPrevWaste();
     updateCoverageState();
@@ -473,10 +464,10 @@ window.addEventListener("DOMContentLoaded", () => {
     const total = selectedCards.map(el => getCardNumericValue(el.textContent)).reduce((a, b) => a + b, 0);
 
     if (total > 11) {
-      adjustScore(WRONG_COMBO_PENALTY);
       const center = centerOfElements(selectedCards);
       spawnPopupAt(center.x, center.y, `${WRONG_COMBO_PENALTY}`, "neg");
       selectedCards.forEach(el => el.classList.remove("selected"));
+      addScore(WRONG_COMBO_PENALTY, { penalty: true }); // Penalty NICHT multiplizieren
       return;
     }
     if (total !== 11) return;
@@ -484,6 +475,7 @@ window.addEventListener("DOMContentLoaded", () => {
     const usedWaste = selectedCards.some(el => el.classList.contains("waste-card"));
     const fieldCards = selectedCards.filter(el => el.classList.contains("field"));
 
+    // Punkte-Berechnung (positive Werte werden multipiziert)
     const basePoints = 10;
     const perField = 2 * fieldCards.length;
     const streakBonus = 2 * streak;
@@ -491,8 +483,8 @@ window.addEventListener("DOMContentLoaded", () => {
 
     fieldCards.forEach(el => spawnPopupOnElement(el, "+2", "pos"));
     const center = centerOfElements(selectedCards);
-    spawnPopupAt(center.x, center.y, `+${movePoints}`, "pos");
-    if (streakBonus > 0) spawnPopupAt(center.x, center.y - 22, `+${streakBonus} streak`, "pos");
+    spawnPopupAt(center.x, center.y, `+${Math.round(movePoints * getRoundMultiplier(currentRound))}`, "pos");
+    if (streakBonus > 0) spawnPopupAt(center.x, center.y - 22, `+${Math.round(streakBonus * getRoundMultiplier(currentRound))} streak`, "pos");
 
     // Entfernen
     selectedCards.forEach(card => {
@@ -508,24 +500,25 @@ window.addEventListener("DOMContentLoaded", () => {
       }
     });
 
-    adjustScore(movePoints);
+    addScore(movePoints);        // mit Multiplikator
     streak += 1;
     updateScoreHud();
 
     checkAndAwardPeakBonuses();
     updateCoverageState();
-    checkWinCondition(); // kann schon zum Win führen
 
-    // --- NEU: Wenn Waste benutzt wurde, automatisch vom Stock nachlegen,
-    //           sonst Waste unverändert lassen. KEIN random/synthetic mehr.
+    if (allFieldCleared()) {
+      handleRoundWin();          // beendet Runde inkl. Endboni & Weiterleitung
+      return;
+    }
+
+    // Nach Verbrauch der Waste-Karte automatisch vom Stock nachlegen
     if (usedWaste) {
       if (!drawCardFromStockToWaste_Auto()) {
-        // Stock war leer und Waste soeben verbraucht -> sofortiges Ende nach deiner Regel
-        endNowIfNoWasteAndNoStock();
+        endNowIfNoWasteAndNoStock(); // Stock leer & Waste gerade verbraucht → sofortiger Rundenausgang
       }
     }
 
-    // Keine Random-Nachlage mehr an irgendeiner Stelle
     if (stock.length === 0) maybeTriggerLoss();
   }
 
@@ -535,49 +528,50 @@ window.addEventListener("DOMContentLoaded", () => {
       const remainingInPeak = document.querySelectorAll(`.card.field[data-diamond="${d}"]:not(.removed)`);
       if (remainingInPeak.length === 0) {
         clearedPeaks.add(d);
-        adjustScore(PEAK_CLEAR_BONUS);
-        spawnCenterPopup(`Peak +${PEAK_CLEAR_BONUS}`, "pos");
+        spawnCenterPopup(`Peak +${Math.round(PEAK_CLEAR_BONUS * getRoundMultiplier(currentRound))}`, "pos");
+        addScore(PEAK_CLEAR_BONUS);
       }
     }
   }
 
-  // ---------- Win/Lose ----------
+  // ---------- Win/Lose auf Rundenebene ----------
   function allFieldCleared() {
     const remainingField = document.querySelectorAll(".card.field:not(.removed)");
     return remainingField.length === 0;
   }
-  function checkWinCondition() {
-    if (!allFieldCleared()) return;
-    if (!gameOver) {
-      pauseTimer();
-      const remainingSeconds = Math.ceil(timeRemaining / 1000);
-      const timeBonus = Math.max(0, remainingSeconds * TIME_BONUS_PER_SEC);
-      const stockBonus = Math.max(0, stock.length * STOCK_BONUS_PER_CARD);
-      const area = peakRow?.getBoundingClientRect?.();
-      const cx = area ? (area.left + area.width / 2) : (window.innerWidth / 2);
-      const cy = area ? (area.top + 40) : 120;
-      if (timeBonus > 0) spawnPopupAt(cx - 40, cy, `Time +${timeBonus}`, "pos");
-      if (stockBonus > 0) spawnPopupAt(cx + 40, cy, `Stock +${stockBonus}`, "pos");
-      adjustScore(timeBonus + stockBonus);
-    }
-    adjustScore(WIN_BONUS);
-    spawnCenterPopup(`Win +${WIN_BONUS}`, "pos");
-    showWinMessage();
+
+  function handleRoundWin() {
+    pauseTimer();
+    // Endboni (mit Multiplikator)
+    const remainingSeconds = Math.ceil(timeRemaining / 1000);
+    const timeBonus = Math.max(0, remainingSeconds * 5);
+    const stockBonus = Math.max(0, stock.length * 10);
+
+    const area = peakRow?.getBoundingClientRect?.();
+    const cx = area ? (area.left + area.width / 2) : (window.innerWidth / 2);
+    const cy = area ? (area.top + 40) : 120;
+
+    if (timeBonus > 0) spawnPopupAt(cx - 40, cy, `Time +${Math.round(timeBonus * getRoundMultiplier(currentRound))}`, "pos");
+    if (stockBonus > 0) spawnPopupAt(cx + 40, cy, `Stock +${Math.round(stockBonus * getRoundMultiplier(currentRound))}`, "pos");
+    addScore(timeBonus);
+    addScore(stockBonus);
+
+    spawnCenterPopup(`Win +${Math.round(WIN_BONUS * getRoundMultiplier(currentRound))}`, "pos");
+    addScore(WIN_BONUS);
+
+    endRound("win");
   }
 
   function existsAnyElevenCombo() {
-    // Nur relevant, solange (Stock>0) oder (Waste vorhanden) – andernfalls endet das Spiel jetzt sofort (siehe endNowIfNoWasteAndNoStock)
     const vals = Array.from(document.querySelectorAll(".card.field"))
       .filter(el => !el.classList.contains("removed") && !el.classList.contains("covered"))
       .map(el => getCardNumericValue(el.textContent));
 
-    // Feld+Feld möglich?
     for (let i = 0; i < vals.length; i++) {
       for (let j = i + 1; j < vals.length; j++) {
         if (vals[i] + vals[j] === 11) return true;
       }
     }
-    // Waste+Feld möglich?
     const wasteTop = topWasteValueOrNull();
     if (wasteTop != null) {
       for (const v of vals) if (wasteTop + v === 11) return true;
@@ -586,52 +580,282 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   function endNowIfNoWasteAndNoStock() {
-    // Deine Regel: Wenn stock==0 und waste leer nach Verbrauch -> sofortiges Ende (Win, wenn Feld leer; sonst Lose)
+    // Harte Regel: stock==0 & waste leer → Runde sofort zu Ende
     if (stock.length === 0 && wasteStack.length === 0) {
-      if (allFieldCleared()) {
-        checkWinCondition(); // führt Win-Flow aus
-      } else {
-        showLoseMessage();
-      }
+      if (allFieldCleared()) handleRoundWin();
+      else endRound("lose");
     }
   }
 
   function maybeTriggerLoss() {
     if (gameOver) return;
 
-    // Priorität 1: Deine neue harte Endbedingung
     if (stock.length === 0 && wasteStack.length === 0) {
-      if (allFieldCleared()) checkWinCondition();
-      else showLoseMessage();
+      if (allFieldCleared()) handleRoundWin();
+      else endRound("lose");
       return;
     }
-
-    // Sonst: Wenn Stock leer und keine 11er-Kombi mehr möglich -> Lose
     if (stock.length === 0 && !existsAnyElevenCombo()) {
-      showLoseMessage();
+      endRound("lose");
     }
   }
 
-  function showWinMessage() {
-    if (gameOver) return;
-    gameOver = true;
-    ensureRestartButton();
-    const message = document.createElement("div");
-    message.innerText = `🎉 You Win! 🎉\nScore: ${score}`;
-    message.classList.add("win-message");
-    document.body.appendChild(message);
+  // ---------- Round Orchestration ----------
+  function endRound(status /*"win"|"lose"|"timeup"*/) {
+    pauseTimer();
+
+    // fixiere Rundenwerte
+    const snapshot = {
+      round: currentRound,
+      status,
+      score: roundScore,
+      timeMs: getRoundTimeLimitMs(currentRound) - timeRemaining,
+      stockLeft: stock.length
+    };
+    roundHistory.push(snapshot);
+    totalScore += roundScore;
+
+    // Overlay mit Ergebnis der Runde
+    showRoundSummary(status, snapshot);
+
+    // Weiterleitung: entweder nächste Runde oder Finalscreen
+    if (currentRound < MAX_ROUNDS) {
+      currentRound += 1;
+    } else {
+      // gesamtes Spiel vorbei
+      showFinalSummary();
+      gameOver = true;
+    }
   }
-  function showLoseMessage(customText) {
-    if (gameOver) return;
-    gameOver = true;
-    ensureRestartButton();
-    const message = document.createElement("div");
-    message.innerText = `${customText || "💀 No moves left!"}\nScore: ${score}`;
-    message.classList.add("win-message");
-    message.style.background = "#e74c3c";
-    message.style.color = "#fff";
-    document.body.appendChild(message);
+
+  function showRoundSummary(status, snap) {
+    const ovId = "roundSummaryOverlay";
+    let ov = document.getElementById(ovId);
+    if (ov) ov.remove();
+
+    ov = document.createElement("div");
+    ov.id = ovId;
+    ov.className = "tutorial-overlay"; // reuse styles
+    const title = status === "win" ? "Round Cleared!" : (status === "timeup" ? "Time's up!" : "Round Over");
+    const canContinue = currentRound < MAX_ROUNDS;
+
+    ov.innerHTML = `
+      <div class="tutorial-card">
+        <h2>${title} (Round ${currentRound}/${MAX_ROUNDS})</h2>
+        <p><strong>Round Score:</strong> ${roundScore}</p>
+        <p><strong>Total Score:</strong> ${totalScore + (canContinue ? 0 : 0)}</p>
+        <p><strong>Time Used:</strong> ${Math.round(snap.timeMs/1000)}s</p>
+        <p><strong>Stock Left:</strong> ${snap.stockLeft}</p>
+        <div style="display:flex; gap:12px; justify-content:center; margin-top:10px;">
+          ${canContinue ? `<button id="nextRoundBtn" class="ui-button">Next Round</button>` : `<button id="finalOkBtn" class="ui-button">OK</button>`}
+        </div>
+      </div>
+    `;
+    document.body.appendChild(ov);
+
+    const proceed = () => {
+      ov.remove();
+      if (currentRound <= MAX_ROUNDS && !gameOver) {
+        // Nächste Runde dealen
+        dealNewRound();
+      }
+    };
+    const finish = () => { ov.remove(); /* Finalscreen bleibt sichtbar */ };
+
+    if (canContinue) {
+      ov.querySelector("#nextRoundBtn").addEventListener("pointerdown", (e) => { e.preventDefault(); proceed(); }, { passive: false });
+      ov.querySelector("#nextRoundBtn").addEventListener("touchstart", (e) => { e.preventDefault(); proceed(); }, { passive: false });
+    } else {
+      ov.querySelector("#finalOkBtn").addEventListener("pointerdown", (e) => { e.preventDefault(); finish(); }, { passive: false });
+      ov.querySelector("#finalOkBtn").addEventListener("touchstart", (e) => { e.preventDefault(); finish(); }, { passive: false });
+    }
   }
+
+  function showFinalSummary() {
+    const ovId = "finalSummaryOverlay";
+    let ov = document.getElementById(ovId);
+    if (ov) ov.remove();
+
+    // History Tabelle
+    const rows = roundHistory.map(r =>
+      `<tr>
+        <td>${r.round}</td>
+        <td>${r.status}</td>
+        <td>${r.score}</td>
+        <td>${Math.round(r.timeMs/1000)}s</td>
+        <td>${r.stockLeft}</td>
+      </tr>`
+    ).join("");
+
+    ov = document.createElement("div");
+    ov.id = ovId;
+    ov.className = "tutorial-overlay";
+    ov.innerHTML = `
+      <div class="tutorial-card" style="max-width:680px;">
+        <h2>Game Over — Final Results</h2>
+        <p><strong>Total Score:</strong> ${totalScore}</p>
+        <table class="final-table">
+          <thead><tr><th>Round</th><th>Status</th><th>Score</th><th>Time</th><th>Stock Left</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div style="display:flex; gap:12px; justify-content:center; margin-top:10px;">
+          <button id="restartAllBtn" class="ui-button">Play Again</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(ov);
+
+    const again = () => { ov.remove(); restartGameFully(); };
+    ov.querySelector("#restartAllBtn").addEventListener("pointerdown", (e) => { e.preventDefault(); again(); }, { passive: false });
+    ov.querySelector("#restartAllBtn").addEventListener("touchstart", (e) => { e.preventDefault(); again(); }, { passive: false });
+  }
+
+  function dealNewRound() {
+    // Reset nur rundenbezogen (Board, stock, waste, timer, streak, roundScore, peaks)
+    streak = 0;
+    roundScore = 0;
+    clearedPeaks.clear();
+    updateScoreHud();
+
+    // Board & Waste leeren
+    wasteStack.splice(0, wasteStack.length);
+    while (wasteEl.firstChild) wasteEl.removeChild(wasteEl.firstChild);
+    while (peakRow.firstChild) peakRow.removeChild(peakRow.firstChild);
+
+    // Board neu aufbauen
+    for (let d = 0; d < NUM_DIAMONDS; d++) peakRow.appendChild(createDiamond(d));
+    updateCoverageState();
+
+    // Stock neu
+    stock = generateBiasedStock(24);
+    updateStockCount();
+
+    // Start: 1 Karte vom Stock auf den Waste
+    if (stock.length > 0) {
+      const v = stock.pop();
+      updateStockCount();
+      pushWasteCardWithValue(v);
+    }
+
+    // Timer der neuen Runde
+    resetTimerForRound();
+    startTimer();
+  }
+
+  // ---------- Timebar (ohne Text-Label) ----------
+  function ensureTimebar() {
+    let bar = document.getElementById("timebar");
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "timebar";
+      bar.innerHTML = `<div class="fill"></div>`;
+      document.body.appendChild(bar);
+    } else {
+      const oldLabel = bar.querySelector(".label");
+      if (oldLabel) oldLabel.remove();
+    }
+    return bar;
+  }
+  const timebar = ensureTimebar();
+
+  function startTimer() {
+    clearInterval(timer);
+    timeStart = performance.now();
+    timer = setInterval(() => {
+      const elapsed = performance.now() - timeStart;
+      timeRemaining = Math.max(0, getRoundTimeLimitMs(currentRound) - elapsed);
+      updateTimebar(timeRemaining);
+      if (timeRemaining <= 0) {
+        clearInterval(timer);
+        endRound("timeup");
+      }
+    }, 120);
+  }
+  function pauseTimer() { clearInterval(timer); }
+  function resetTimerForRound() {
+    clearInterval(timer);
+    timeRemaining = getRoundTimeLimitMs(currentRound);
+    updateTimebar(timeRemaining);
+  }
+  function colorForPct(p) {
+    if (p > 0.66) return "#41c77d";  // grün
+    if (p > 0.33) return "#e6c14a";  // gelb
+    return "#e85b5b";                // rot
+  }
+  function updateTimebar(ms) {
+    const fill = timebar.querySelector(".fill");
+    const pct = (ms / getRoundTimeLimitMs(currentRound));
+    if (fill) {
+      fill.style.width = Math.max(0, Math.min(100, pct * 100)) + "%";
+      fill.style.background = colorForPct(pct);
+    }
+  }
+
+  // ---------- Restart / Init ----------
+  function updateStockCount() {
+    const el = document.getElementById("stockCount");
+    if (el) el.textContent = String(stock.length);
+  }
+
+  function restartGameFully() {
+    // vollständiger Neustart (alle Runden zurücksetzen)
+    gameOver = false;
+    currentRound = 1;
+    totalScore = 0;
+    roundScore = 0;
+    streak = 0;
+    clearedPeaks.clear();
+    roundHistory = [];
+    updateScoreHud();
+
+    document.querySelectorAll(".win-message").forEach(el => el.remove());
+    document.querySelectorAll("#roundSummaryOverlay,#finalSummaryOverlay").forEach(el => el.remove());
+    wasteStack.splice(0, wasteStack.length);
+    while (wasteEl.firstChild) wasteEl.removeChild(wasteEl.firstChild);
+    while (peakRow.firstChild) peakRow.removeChild(peakRow.firstChild);
+
+    for (let d = 0; d < NUM_DIAMONDS; d++) peakRow.appendChild(createDiamond(d));
+    updateCoverageState();
+
+    stock = generateBiasedStock(24);
+    updateStockCount();
+
+    if (stock.length > 0) {
+      const v = stock.pop();
+      updateStockCount();
+      pushWasteCardWithValue(v);
+    }
+
+    resetTimerForRound();
+    startTimer();
+    killStrayStockLabels();
+  }
+
+  // ---------- Initial Setup ----------
+  ensureTopBar();
+  ensureTutorialButton();
+  ensureRestartButton();
+  ensureScoreHud();
+  ensureStockWrapAndLabel();
+
+  for (let d = 0; d < NUM_DIAMONDS; d++) peakRow.appendChild(createDiamond(d));
+  updateCoverageState();
+
+  stock = generateBiasedStock(24);
+  updateStockCount();
+
+  if (stock.length > 0) {
+    const v = stock.pop();
+    updateStockCount();
+    pushWasteCardWithValue(v);
+  }
+
+  resetTimerForRound();
+  startTimer();
+
+  killStrayStockLabels();
+
+  window.addEventListener("resize", updateCoverageState, { passive: true });
 
   // ---------- Deck/Stock: Komplement-Bias ----------
   function generateBiasedStock(size) {
@@ -655,119 +879,4 @@ window.addEventListener("DOMContentLoaded", () => {
     }
     return result;
   }
-
-  // ---------- Timebar (ohne Text-Label) ----------
-  function ensureTimebar() {
-    let bar = document.getElementById("timebar");
-    if (!bar) {
-      bar = document.createElement("div");
-      bar.id = "timebar";
-      bar.innerHTML = `<div class="fill"></div>`; // kein Label mehr!
-      document.body.appendChild(bar);
-    } else {
-      // falls alte Builds ein Label hatten, entferne es
-      const oldLabel = bar.querySelector(".label");
-      if (oldLabel) oldLabel.remove();
-    }
-    return bar;
-  }
-  const timebar = ensureTimebar();
-
-  function startTimer() {
-    clearInterval(timer);
-    timeStart = performance.now();
-    timer = setInterval(() => {
-      const elapsed = performance.now() - timeStart;
-      timeRemaining = Math.max(0, TIME_LIMIT_MS - elapsed);
-      updateTimebar(timeRemaining);
-      if (timeRemaining <= 0) {
-        clearInterval(timer);
-        showLoseMessage("⏳ Time's up!");
-      }
-    }, 120);
-  }
-  function pauseTimer() { clearInterval(timer); }
-  function resetTimer() {
-    clearInterval(timer);
-    timeRemaining = TIME_LIMIT_MS;
-    updateTimebar(timeRemaining);
-  }
-  function colorForPct(p) {
-    if (p > 0.66) return "#41c77d";  // grün
-    if (p > 0.33) return "#e6c14a";  // gelb
-    return "#e85b5b";                // rot
-  }
-  function updateTimebar(ms) {
-    const fill = timebar.querySelector(".fill");
-    const pct = (ms / TIME_LIMIT_MS);
-    if (fill) {
-      fill.style.width = Math.max(0, Math.min(100, pct * 100)) + "%";
-      fill.style.background = colorForPct(pct);
-    }
-  }
-
-  // ---------- Restart / Init ----------
-  function updateStockCount() {
-    const el = document.getElementById("stockCount");
-    if (el) el.textContent = String(stock.length);
-  }
-  function restartGame() {
-    gameOver = false;
-    score = 0;
-    streak = 0;
-    clearedPeaks.clear();
-    updateScoreHud();
-
-    document.querySelectorAll(".win-message").forEach(el => el.remove());
-    wasteStack.splice(0, wasteStack.length);
-    while (wasteEl.firstChild) wasteEl.removeChild(wasteEl.firstChild);
-    while (peakRow.firstChild) peakRow.removeChild(peakRow.firstChild);
-
-    for (let d = 0; d < NUM_DIAMONDS; d++) {
-      peakRow.appendChild(createDiamond(d));
-    }
-    updateCoverageState();
-
-    stock = generateBiasedStock(24);
-    updateStockCount();
-
-    // Start: 1 Karte vom Stock auf den Waste
-    if (stock.length > 0) {
-      const v = stock.pop();
-      updateStockCount();
-      pushWasteCardWithValue(v);
-    }
-    // KEIN Random/Synthetic-Nachschub mehr!
-
-    resetTimer();
-    startTimer();
-    killStrayStockLabels();
-  }
-
-  // ---------- Initial Setup ----------
-  ensureTopBar();
-  ensureTutorialButton();
-  ensureRestartButton();
-  ensureScoreHud();
-  ensureStockWrapAndLabel();
-
-  for (let d = 0; d < NUM_DIAMONDS; d++) peakRow.appendChild(createDiamond(d));
-  updateCoverageState();
-
-  stock = generateBiasedStock(24);
-  updateStockCount();
-
-  // Start: 1 Karte vom Stock auf den Waste
-  if (stock.length > 0) {
-    const v = stock.pop();
-    updateStockCount();
-    pushWasteCardWithValue(v);
-  }
-
-  resetTimer();
-  startTimer();
-
-  killStrayStockLabels();
-
-  window.addEventListener("resize", updateCoverageState, { passive: true });
 });
