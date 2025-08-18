@@ -26,37 +26,35 @@
 
     <!-- Deck- und Waste-Bereich -->
     <div class="deck-area">
-      <div id="deck" class="deck">Draw</div>
-      <div id="waste" class="waste"></div>
+      <div id="deck" class="deck" aria-label="Draw pile"></div>
+      <div id="waste" class="waste" aria-label="Waste pile"></div>
     </div>
   </div>
 
-
   <!-- Round / Total Score HUD -->
-<div id="roundHud">
-  <span id="roundIndicator">Round 1 / 7</span>
-  <span id="totalScore">Total: 0</span>
-</div>
-
-<!-- Zwischenrunde Overlay -->
-<div id="roundOverlay" class="overlay hidden">
-  <div class="overlay-content">
-    <h2 id="roundResultTitle">Round Complete!</h2>
-    <p id="roundBreakdown"></p>
-    <button id="nextRoundBtn">Next Round</button>
+  <div id="roundHud">
+    <span id="roundIndicator">Round 1 / 7</span>
+    <span id="totalScore">Total: 0</span>
   </div>
-</div>
 
-<!-- Finalscreen -->
-<div id="finalOverlay" class="overlay hidden">
-  <div class="overlay-content">
-    <h2>Game Over</h2>
-    <p id="finalScore"></p>
-    <div id="roundHistoryTable"></div>
-    <button id="restartSeriesBtn">Play Again</button>
+  <!-- Zwischenrunde Overlay (wird von JS nicht manuell bedient; bleibt kompatibel) -->
+  <div id="roundOverlay" class="overlay hidden">
+    <div class="overlay-content">
+      <h2 id="roundResultTitle">Round Complete!</h2>
+      <p id="roundBreakdown"></p>
+      <button id="nextRoundBtn">Next Round</button>
+    </div>
   </div>
-</div>
 
+  <!-- Finalscreen -->
+  <div id="finalOverlay" class="overlay hidden">
+    <div class="overlay-content">
+      <h2>Game Over</h2>
+      <p id="finalScore"></p>
+      <div id="roundHistoryTable"></div>
+      <button id="restartSeriesBtn">Play Again</button>
+    </div>
+  </div>
 
   <!-- JavaScript-Datei einbinden -->
   <script src="elevengame.js" defer></script>
