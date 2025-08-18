@@ -47,7 +47,7 @@ window.addEventListener("DOMContentLoaded", () => {
   function valNum(t){ return t==="A" ? 1 : parseInt(t,10); }
   function compFor(v){ return 11 - v; }
 
-  // ---------- Top Bar & HUD ----------
+  // ---------- UI helpers (Top bar, HUD, Tutorial) ----------
   function ensureTopBar(){
     let bar = $("#topBar");
     if(!bar){
@@ -115,7 +115,6 @@ window.addEventListener("DOMContentLoaded", () => {
     const tot= $("#totalValue");  if(tot) tot.textContent= String(totalScore);
   }
 
-  // Tutorial (optional)
   function ensureTutorial(){
     let overlay = $("#tutorialOverlay");
     const content = `
@@ -156,11 +155,58 @@ window.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll(".card.selected").forEach(el => el.classList.remove("selected"));
   }
 
+  // ---------- Animation Helpers ----------
+  function getCenter(el){
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width/2, y: r.top + r.height/2 };
+  }
+
+  /**
+   * Animiert eine „Ghost“-Karte von fromEl → toEl.
+   * callback wird nach Ende aufgerufen.
+   */
+  function animateCardFlight(valueText, fromEl, toEl, callback){
+    if(!fromEl || !toEl){
+      callback?.();
+      return;
+    }
+    const from = getCenter(fromEl);
+    const to   = getCenter(toEl);
+
+    const ghost = document.createElement("div");
+    ghost.className = "ghost-card";
+    ghost.textContent = valueText;
+    ghost.dataset.badge = valueText;
+    ghost.style.left = (from.x - parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--card-w'))/2) + "px";
+    ghost.style.top  = (from.y - parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--card-h'))/2) + "px";
+
+    // Anfangsposition
+    ghost.style.transform = `translate(0px, 0px)`;
+    document.body.appendChild(ghost);
+
+    // Zieloffset
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+
+    // nächste Animation-Frame abwarten → dann bewegen
+    requestAnimationFrame(() => {
+      ghost.style.transform = `translate(${dx}px, ${dy}px)`;
+    });
+
+    // nach Laufzeit entfernen
+    const done = () => {
+      ghost.remove();
+      callback?.();
+    };
+    setTimeout(done, 280); // etwas länger als CSS-Transition (260ms) zur Sicherheit
+  }
+
   // ---------- Stock / Waste ----------
   function pushWaste(value){
     const card = document.createElement("div");
     card.className = "waste-card card clickable deal-anim flip-anim";
     card.textContent = value;
+    card.dataset.badge = value;
     card.style.zIndex = String(wasteStack.length);
     wasteEl.appendChild(card);
     card.addEventListener("animationend", ()=> card.classList.remove("deal-anim","flip-anim"), {once:true});
@@ -190,37 +236,57 @@ window.addEventListener("DOMContentLoaded", () => {
     for(const top of sorted){
       for(const slot of groups[top]){
         const prev = wasteStack.pop();
-        if(prev?.parentElement===wasteEl) wasteEl.removeChild(prev);
-        slot.classList.remove("removed","selected","covered","unselectable");
-        slot.textContent = prev?.textContent || getRandomCardValue();
-        slot.style.visibility = "visible";
-        updateCoverageState();
+        if(!prev) return false;
+
+        // Animiert: Waste → Slot
+        animateCardFlight(prev.textContent, prev, slot, () => {
+          if(prev.parentElement===wasteEl) wasteEl.removeChild(prev);
+          slot.classList.remove("removed","selected","covered","unselectable");
+          slot.textContent = prev.textContent || getRandomCardValue();
+          slot.dataset.badge = slot.textContent;
+          slot.style.visibility = "visible";
+          updateCoverageState();
+        });
+
         return true;
       }
     }
     return false;
   }
 
+  // Deck → Waste: animierte Ghost-Karte
   function drawFromStock_Auto(){
     if(stock.length===0) return false;
-    const v = stock.pop();
+    const value = stock.pop();
     updateStockCount();
-    pushWaste(v);
+
+    // Ghost-Anim von Deck zum Waste-Container
+    animateCardFlight(value, deckEl, wasteEl, () => {
+      pushWaste(value);
+    });
+
     return true;
   }
+
   function drawFromStock_Manual(){
     if(gameOver) return;
+
     // NEW: clear all selections when drawing a new stock card
     clearAllSelections();
 
     if(streak>0){ streak=0; updateRoundHud(); }
-    refillOneRemovedSlotUsingPrevWaste();
+    const didRefill = refillOneRemovedSlotUsingPrevWaste();
     updateCoverageState();
+
     if(stock.length===0){ maybeTriggerLoss(); return; }
-    const v = stock.pop();
+    const value = stock.pop();
     updateStockCount();
-    pushWaste(v);
-    if(stock.length===0) maybeTriggerLoss();
+
+    // Animiert: Deck → Waste
+    animateCardFlight(value, deckEl, wasteEl, () => {
+      pushWaste(value);
+      if(stock.length===0) maybeTriggerLoss();
+    });
   }
 
   // ---------- Coverage / Board ----------
@@ -241,7 +307,7 @@ window.addEventListener("DOMContentLoaded", () => {
   function createDiamond(dIdx){
     const peak = document.createElement("div");
     peak.className = "peak";
-    const cardH=90, overlap=cardH*0.2;
+    const cardH=92, overlap=cardH*0.2;
     const matrix = [];
     rowsPerDiamond.forEach((n,row)=>{
       const rowEl = document.createElement("div");
@@ -251,7 +317,9 @@ window.addEventListener("DOMContentLoaded", () => {
       for(let i=0;i<n;i++){
         const card = document.createElement("div");
         card.className = "card field";
-        card.textContent = getRandomCardValue();
+        const val = getRandomCardValue();
+        card.textContent = val;
+        card.dataset.badge = val;
         card.dataset.diamond= String(dIdx);
         card.dataset.row    = String(row);
         card.dataset.col    = String(i);
@@ -529,7 +597,6 @@ window.addEventListener("DOMContentLoaded", () => {
     `;
     document.body.appendChild(ov);
 
-    // Kill any previous timer, then auto-advance in 4s
     if(overlayTimer) { clearTimeout(overlayTimer); overlayTimer = null; }
     overlayTimer = setTimeout(() => {
       ov.remove();
@@ -581,7 +648,6 @@ window.addEventListener("DOMContentLoaded", () => {
       showRoundSummaryAuto(status, snap); // 4s auto → next round
     } else {
       gameOver = true;
-      // Slight delay to make last popups visible
       setTimeout(() => { showFinalOverlay(); roundEnding = false; }, 200);
     }
   }
@@ -603,7 +669,6 @@ window.addEventListener("DOMContentLoaded", () => {
     roundScore = 0;
     clearedPeaks.clear();
 
-    // cleanup overlays timers
     if(overlayTimer){ clearTimeout(overlayTimer); overlayTimer = null; }
 
     // Board & Waste reset
@@ -611,10 +676,15 @@ window.addEventListener("DOMContentLoaded", () => {
     while(wasteEl.firstChild) wasteEl.removeChild(wasteEl.firstChild);
     buildBoard();
 
-    // Stock fresh & initial waste from stock
+    // Stock fresh & initial waste from stock (animiert)
     stock = generateBiasedStock(24);
     updateStockCount();
-    if(stock.length>0){ const v = stock.pop(); updateStockCount(); pushWaste(v); }
+    if(stock.length>0){
+      const v = stock.pop();
+      updateStockCount();
+      // Anim: Deck → Waste beim Rundendeal
+      animateCardFlight(v, deckEl, wasteEl, () => pushWaste(v));
+    }
 
     resetTimerForRound();
     startTimer();
@@ -623,13 +693,11 @@ window.addEventListener("DOMContentLoaded", () => {
 
   function restartGameFully(){
     gameOver = false;
-    // kill timers/guards/overlays
     pauseTimer();
     if(overlayTimer){ clearTimeout(overlayTimer); overlayTimer = null; }
     roundEnding = false;
     roundTransitionInProgress = false;
 
-    // remove any lingering overlays
     document.querySelectorAll(".overlay").forEach(el => el.remove());
 
     currentRound = 1;
@@ -646,7 +714,11 @@ window.addEventListener("DOMContentLoaded", () => {
 
     stock = generateBiasedStock(24);
     updateStockCount();
-    if(stock.length>0){ const v = stock.pop(); updateStockCount(); pushWaste(v); }
+    if(stock.length>0){
+      const v = stock.pop();
+      updateStockCount();
+      animateCardFlight(v, deckEl, wasteEl, () => pushWaste(v));
+    }
 
     resetTimerForRound();
     startTimer();
@@ -707,7 +779,12 @@ window.addEventListener("DOMContentLoaded", () => {
   buildBoard();
   stock = generateBiasedStock(24);
   updateStockCount();
-  if(stock.length>0){ const v = stock.pop(); updateStockCount(); pushWaste(v); }
+  if(stock.length>0){
+    const v = stock.pop();
+    updateStockCount();
+    // Startdeal animiert
+    animateCardFlight(v, deckEl, wasteEl, () => pushWaste(v));
+  }
   resetTimerForRound();
   startTimer();
   updateRoundHud();
