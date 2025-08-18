@@ -1,489 +1,262 @@
+/* ====== Reset & Layout ====== */
+* { box-sizing: border-box; }
 html, body {
   margin: 0;
   padding: 0;
-  overflow: hidden;
-  width: 100vw;
-  height: 100vh;
-  background-color: #3b5d3c;
-  background-image: var(--background-image);
-  background-size: cover;
-  background-position: center;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-
-  /* Mobile Touch UX */
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
+  width: 100%;
+  height: 100%;
+  background: #2f4f30; /* Green felt */
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  color: #f5f7f4;
 }
-
-:root {
-  --background-image:
-    radial-gradient(120% 80% at 50% 0%, rgba(0,0,0,.0) 40%, rgba(0,0,0,.22) 100%),
-    url("data:image/svg+xml;utf8,\
-    <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 800'>\
-      <filter id='f'>\
-        <feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' seed='9' result='n'/>\
-        <feColorMatrix type='matrix' values='0 0 0 0 0.07  0 0 0 0 0.20  0 0 0 0 0.12  0 0 0 0.9 0'/>\
-        <feGaussianBlur stdDeviation='0.6'/>\
-      </filter>\
-      <rect width='1200' height='800' fill='%233b5d3c'/>\
-      <rect width='1200' height='800' filter='url(%23f)' opacity='0.25'/>\
-      <g opacity='0.18'>\
-        <path d='M0,700 C200,600 450,720 700,640 C900,580 1050,620 1200,590' stroke='%232b4a30' stroke-width='40' fill='none'/>\
-        <path d='M0,500 C300,430 520,520 820,470 C980,445 1100,460 1200,450' stroke='%23345438' stroke-width='26' fill='none'/>\
-      </g>\
-    </svg>");
-  --card-w: 64px;
-  --card-h: 92px;
-  --card-radius: 12px;
-  --ui-radius: 10px;
-  --elev: 0 6px 18px rgba(0,0,0,0.25);
-  --elev-strong: 0 10px 26px rgba(0,0,0,0.35);
-  --accent: #ffdd57;
-  --pos: #2ecc71;
-  --neg: #e74c3c;
-  --popup-shadow: 0 6px 18px rgba(0,0,0,0.28);
-  --card-back: url("data:image/svg+xml;utf8,\
-    <svg xmlns='http://www.w3.org/2000/svg' width='200' height='300' viewBox='0 0 200 300'>\
-      <defs>\
-        <pattern id='p' width='14' height='14' patternUnits='userSpaceOnUse' patternTransform='rotate(45)'>\
-          <rect width='14' height='14' fill='%232c3e50'/>\
-          <circle cx='7' cy='7' r='2' fill='%23ecf0f1'/>\
-        </pattern>\
-      </defs>\
-      <rect x='8' y='8' width='184' height='284' rx='16' ry='16' fill='%232b4a30' stroke='%23000000' stroke-opacity='.2'/>\
-      <rect x='14' y='14' width='172' height='272' rx='12' ry='12' fill='url(%23p)'/>\
-    </svg>");
-}
-
-/* "Stock:"-Label kompromisslos verstecken */
-#stockLabel,
-.stock-label,
-.stock-title,
-[data-label="stock"],
-[data-stock-label] { display: none !important; }
-.score-hud span:has(> .stock-label) { display: none !important; }
 
 .game-container {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  align-items: center;
-  height: 100%;
+  position: relative;
   width: 100%;
-  padding-top: 48px; /* Platz für Score-HUD */
-  position: relative;
+  height: 100%;
+  overflow: hidden;
 }
 
-/* Top bar: Tutorial (links) + Restart (rechts daneben) */
-.top-bar {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  display: flex;
-  gap: 8px;
-  z-index: 1200;
-}
-
-.ui-button {
-  appearance: none;
-  border: 1px solid rgba(0,0,0,0.25);
-  border-radius: var(--ui-radius);
-  background: linear-gradient(180deg, #ffffff, #eaeaea);
-  padding: 8px 14px;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: var(--elev);
-  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.2s ease;
-
-  /* Mobile */
-  user-select: none;
-  touch-action: manipulation;
-}
-.ui-button:hover { transform: translateY(-1px); box-shadow: var(--elev-strong); }
-.ui-button:active { transform: translateY(0); }
-
-/* Score HUD zentriert über dem mittleren Peak */
-.score-hud {
-  position: absolute;
-  top: 8px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: inline-flex;
-  align-items: center;
-  gap: 16px;
-  padding: 8px 12px;
-  border-radius: var(--ui-radius);
-  border: 1px solid rgba(255,255,255,0.25);
-  background: linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.08));
-  color: #fff;
-  backdrop-filter: blur(6px);
-  box-shadow: var(--elev);
-  z-index: 1100;
-
-  user-select: none;
-}
-
-.score-hud span strong {
-  color: #fff;
-  text-shadow: 0 1px 0 rgba(0,0,0,0.2);
-}
-
+/* ====== Board Regions ====== */
 .peak-row {
-  display: flex;
-  justify-content: space-evenly;
-  width: 82%;
-  margin-top: 24px;
-  margin-bottom: 40px;
   position: relative;
+  width: 100%;
+  height: 60vh;
+  display: grid;
+  place-items: center;
 }
 
-.peak {
-  position: relative;
-  width: 110px;
-  height: 370px;
-}
-
-.card-row {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
+.deck-area {
   position: absolute;
+  bottom: 18vh;
   left: 50%;
   transform: translateX(-50%);
-}
-
-/* ==== Karten-Front (neues Theme) ==== */
-.card, .waste-card {
-  width: var(--card-w);
-  height: var(--card-h);
-  border-radius: var(--card-radius);
   display: flex;
+  gap: 24px;
   align-items: center;
-  justify-content: center;
-  font-size: 22px;
-  font-weight: 800;
-  color: #2c3e50;
-  border: 1px solid rgba(0,0,0,0.16);
-  transition: transform 0.2s, box-shadow 0.2s, background 0.2s, filter 0.2s;
-  background:
-    linear-gradient(160deg, rgba(255,255,255,0.98), rgba(245,245,245,0.98)),
-    radial-gradient(120% 90% at 20% 10%, rgba(255,255,255,0.9), rgba(255,255,255,0) 60%),
-    radial-gradient(120% 90% at 80% 90%, rgba(0,0,0,0.06), rgba(0,0,0,0) 60%);
-  box-shadow: 0 2px 0 rgba(0,0,0,0.14), var(--elev);
+}
 
-  /* Mobile Hit & Feel */
-  -webkit-tap-highlight-color: transparent;
+#deck, #waste {
+  width: 96px;
+  height: 140px;
+  border-radius: 10px;
+  background: #1b1b1b;
+  border: 2px solid #333;
+  display: grid;
+  place-items: center;
   user-select: none;
-  touch-action: manipulation;
+  cursor: pointer;
+  position: relative;
+  box-shadow: 0 6px 18px rgba(0,0,0,.35);
 }
 
-/* Wert „Badge“ oben links (rein optisch) */
-.card::before, .waste-card::before {
-  content: attr(data-badge);
+#stockCount {
   position: absolute;
-  top: 6px; left: 6px;
-  font-size: 11px;
-  font-weight: 900;
-  color: #6b7b8a;
-  opacity: .9;
+  bottom: -20px;
+  font-size: 12px;
+  color: #e5e5e5;
+  opacity: .85;
 }
 
-/* Nie transparent, nur visuell grauer wenn unselectable */
-.card.unselectable {
-  background:
-    linear-gradient(145deg, #ededed, #f7f7f7),
-    radial-gradient(120% 90% at 20% 10%, rgba(255,255,255,0.7), rgba(255,255,255,0) 60%),
-    repeating-linear-gradient(135deg, rgba(0,0,0,0.03) 0, rgba(0,0,0,0.03) 2px, rgba(255,255,255,0.03) 2px, rgba(255,255,255,0.03) 4px);
-  filter: grayscale(0.2) brightness(0.97);
+#restartBtn, #tutorialBtn {
+  position: absolute;
+  top: 16px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.18);
+  color: #fff;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+#tutorialBtn { left: 16px; }
+#restartBtn { left: 130px; }
+
+/* ====== Cards ====== */
+.card {
+  width: 96px;
+  height: 140px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #fff, #f2f2f2);
+  border: 2px solid #e1e1e1;
+  color: #111;
+  display: grid;
+  place-items: center;
+  position: absolute;
+  transition: transform .12s ease, box-shadow .12s ease, filter .12s ease, opacity .2s ease;
+  box-shadow: 0 8px 20px rgba(0,0,0,.18);
 }
 
-.card.clickable, .waste-card.clickable { cursor: pointer; }
-
-.card.selected, .waste-card.selected {
-  transform: translateY(-6px);
-  box-shadow: 0 0 16px 6px rgba(255, 221, 87, 0.65), var(--elev-strong);
+/* Selected: leicht anheben (bereits „vorhanden“) */
+.card.is-selected {
+  transform: translateY(-10px) scale(1.02);
+  box-shadow: 0 12px 26px rgba(0,0,0,.28);
 }
 
-/* Covered bleibt farblich grau, aber niemals transparent */
-.card.covered {
-  filter: grayscale(0.25) brightness(0.97);
-  opacity: 1 !important;
+/* Covered: NIEMALS transparent; nur leicht grau (visueller Hinweis) */
+.card.is-covered {
+  filter: grayscale(45%) brightness(0.92);
+  pointer-events: auto; /* Klicks abfangen; Logik blockt */
 }
 
-/* Shake nur für covered */
-.card.covered.shake { animation: shake 0.15s ease-in-out; }
+/* Nicht auswählbar, generisch (leichter Grauton) */
+.card.is-unselectable {
+  filter: grayscale(30%) brightness(0.95);
+}
 
-@keyframes shake {
+/* ====== Match Feedback ====== */
+/* Glow grün (gültige 11-Kombi) */
+.fx-glow-green {
+  animation: fxGlowGreen .48s ease-out;
+}
+@keyframes fxGlowGreen {
+  0% { box-shadow: 0 0 0 rgba(0,0,0,0); }
+  30% { box-shadow: 0 0 18px rgba(0,255,140,.9); }
+  100% { box-shadow: 0 0 0 rgba(0,0,0,0); }
+}
+
+/* Glow rot (Fehler) */
+.fx-glow-red {
+  animation: fxGlowRed .48s ease-out;
+}
+@keyframes fxGlowRed {
+  0% { box-shadow: 0 0 0 rgba(0,0,0,0); }
+  30% { box-shadow: 0 0 18px rgba(255,70,70,.9); }
+  100% { box-shadow: 0 0 0 rgba(0,0,0,0); }
+}
+
+/* Shake (Error) – für covered und falsche Matches */
+.fx-shake {
+  animation: fxShake .28s ease-in-out;
+}
+@keyframes fxShake {
   0% { transform: translateX(0); }
-  25% { transform: translateX(-3px); }
-  50% { transform: translateX(3px); }
-  75% { transform: translateX(-3px); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
   100% { transform: translateX(0); }
 }
 
-/* Deck + Waste Bereich */
-.deck-area {
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  gap: 60px;
-  margin-top: 10px;
+/* Shrink+Fade beim Entfernen nach gültiger Kombi */
+.fx-shrink-out {
+  animation: fxShrinkOut .18s ease forwards;
+}
+@keyframes fxShrinkOut {
+  to { transform: scale(.75) translateY(-6px); opacity: 0; }
 }
 
-.deck-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-}
-
-.deck, .waste {
-  width: 78px;
-  height: 108px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-
-  user-select: none;
-  touch-action: manipulation;
-}
-
-/* Deck bekommt echten Kartenrücken */
-.deck {
-  background: var(--card-back);
-  background-size: cover;
-  background-position: center;
-  border: 2px solid rgba(0,0,0,0.25);
-  box-shadow: var(--elev);
-  cursor: pointer;
-  transform-style: preserve-3d;
-  color: transparent; /* Schrift wie "Draw" verbergen */
-}
-.deck:hover { transform: translateY(-2px); box-shadow: var(--elev-strong); }
-.deck:active { transform: translateY(0); }
-
-#stockCount {
-  color: #fff;
-  font-weight: 700;
-  text-shadow: 0 1px 0 rgba(0,0,0,0.5);
-  user-select: none;
-}
-
-.waste {
-  background: transparent;
-  border: none;
-}
-
-.waste-card {
+/* Sparkle / Glow Partikel */
+.sparkle {
   position: absolute;
-  top: 0;
-  left: 0;
-  transform-style: preserve-3d;
-}
-
-/* Deal/Flip Animation (bestehend) */
-.deal-anim { animation: dealFromDeck 280ms ease-out; }
-.flip-anim { animation: flipCard 360ms ease-in-out 80ms; }
-
-@keyframes dealFromDeck {
-  0%   { transform: translate(-8px, -8px) scale(0.9); opacity: 0.0; }
-  60%  { transform: translate(-2px, -2px) scale(1.02); opacity: 1; }
-  100% { transform: translate(0, 0) scale(1); }
-}
-@keyframes flipCard {
-  0%   { transform: rotateY(90deg); }
-  100% { transform: rotateY(0); }
-}
-
-/* Ghost Card (für fliegende Animationen) */
-.ghost-card {
-  position: fixed;
-  width: var(--card-w);
-  height: var(--card-h);
-  border-radius: var(--card-radius);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 22px;
-  font-weight: 800;
-  color: #2c3e50;
-  background:
-    linear-gradient(160deg, rgba(255,255,255,0.98), rgba(245,245,245,0.98)),
-    radial-gradient(120% 90% at 20% 10%, rgba(255,255,255,0.9), rgba(255,255,255,0) 60%),
-    radial-gradient(120% 90% at 80% 90%, rgba(0,0,0,0.06), rgba(0,0,0,0) 60%);
-  border: 1px solid rgba(0,0,0,0.16);
-  box-shadow: 0 6px 18px rgba(0,0,0,0.28);
-  z-index: 3000;
-  transform: translate(0,0);
-  transition: transform 260ms cubic-bezier(.15,.85,.25,1), opacity 120ms linear;
-}
-.ghost-card::before {
-  content: attr(data-badge);
-  position: absolute;
-  top: 6px; left: 6px;
-  font-size: 11px;
-  font-weight: 900;
-  color: #6b7b8a;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff, rgba(255,255,255,0));
+  pointer-events: none;
+  animation: sparklePop .6s ease-out forwards;
   opacity: .9;
 }
+@keyframes sparklePop {
+  0% { transform: scale(.6); opacity: 0; }
+  20% { opacity: 1; }
+  100% { transform: translate(var(--sx, 0), var(--sy, -24px)) scale(0.1); opacity: 0; }
+}
 
-/* Win/Lose Message */
-.win-message {
-  position: fixed;
-  top: 40%;
-  left: 50%;
+/* ====== Score Popups ====== */
+.score-popup {
+  position: absolute;
+  font-weight: 800;
+  font-size: 18px;
+  text-shadow: 0 2px 8px rgba(0,0,0,.3);
+  animation: popupRise .9s ease-out forwards;
+  pointer-events: none;
   transform: translate(-50%, -50%);
-  background: gold;
-  color: #222;
-  padding: 30px 50px;
-  border-radius: 12px;
-  font-size: 2rem;
-  box-shadow: 0 0 20px rgba(0,0,0,0.3);
-  z-index: 1000;
-  animation: fadeIn 0.6s ease-out;
-  text-align: center;
-  white-space: pre-line;
+}
+.score-popup.green { color: #34d399; }   /* Standardpunkte */
+.score-popup.gold  { color: #f4d03f; }   /* Bonus */
+.score-popup.red   { color: #ff6b6b; }   /* Malus */
+@keyframes popupRise {
+  0% { opacity: 0; transform: translate(-50%, -10%); }
+  15% { opacity: 1; transform: translate(-50%, -30%); }
+  100% { opacity: 0; transform: translate(-50%, -90%); }
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translate(-50%, -60%); }
-  to { opacity: 1; transform: translate(-50%, -50%); }
+/* ====== Timer Bar ====== */
+.timer-wrap {
+  position: absolute;
+  left: 50%;
+  bottom: 6vh;
+  transform: translateX(-50%);
+  width: min(780px, 86vw);
+  height: 12px;                 /* „deutlich kleiner“ */
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow: inset 0 2px 10px rgba(0,0,0,.25);
 }
 
-/* Tutorial Overlay (EN) */
-.tutorial-overlay {
+.timer-fill {
+  width: 100%;
+  height: 100%;
+  transform-origin: left center;
+  transition: transform .1s linear;
+  background: linear-gradient(90deg, #22c55e, #eab308, #ef4444); /* grün → gelb → rot */
+  background-size: 200% 100%;
+}
+
+/* Pulsieren am Ende */
+.timer-fill.pulse {
+  animation: timerPulse .9s ease-in-out infinite;
+}
+@keyframes timerPulse {
+  0%   { filter: brightness(1); }
+  50%  { filter: brightness(1.4); }
+  100% { filter: brightness(1); }
+}
+
+/* ====== Round Summary Modal ====== */
+.round-modal {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.45);
-  backdrop-filter: blur(3px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1300;
+  background: rgba(0,0,0,.55);
+  display: grid;
+  place-items: center;
+  z-index: 9999;
 }
-.tutorial-overlay.hidden { display: none; }
-
-.tutorial-card {
-  width: min(640px, 92vw);
-  background: linear-gradient(180deg, #ffffff, #f4f4f4);
-  border: 1px solid rgba(0,0,0,0.12);
+.round-modal__content {
+  width: min(560px, 92vw);
   border-radius: 16px;
-  box-shadow: var(--elev-strong);
-  padding: 20px 22px;
-  color: #222;
+  background: rgba(20,20,20,.92);
+  border: 1px solid rgba(255,255,255,.12);
+  padding: 20px;
+  box-shadow: 0 18px 60px rgba(0,0,0,.5);
 }
-.tutorial-card h2 { margin: 0 0 10px; }
-.tutorial-card ul { margin: 0 0 16px 18px; }
-.tutorial-card li { margin: 6px 0; }
-
-/* Punkte-Popups */
-.points-pop {
-  position: fixed;
-  pointer-events: none;
-  padding: 4px 8px;
-  border-radius: 999px;
+.round-modal__title {
+  font-size: 22px;
   font-weight: 800;
-  font-size: 16px;
-  box-shadow: var(--popup-shadow);
-  animation: popFloat 900ms ease forwards;
-  z-index: 1500;
-  background: rgba(255,255,255,0.95);
+  margin: 0 0 10px 0;
 }
-.points-pop.pos { color: var(--pos); border: 1px solid rgba(46,204,113,0.6); }
-.points-pop.neg { color: var(--neg); border: 1px solid rgba(231,76,60,0.6); }
-
-@keyframes popFloat {
-  0%   { transform: translateY(0) scale(0.9); opacity: 0; }
-  12%  { transform: translateY(-6px) scale(1); opacity: 1; }
-  70%  { opacity: 1; }
-  100% { transform: translateY(-22px) scale(1); opacity: 0; }
+.round-modal__stats {
+  font-size: 14px;
+  opacity: .9;
+  line-height: 1.5;
+  margin-bottom: 16px;
 }
-
-/* Nie transparente covered Karten */
-.card.covered { opacity: 1 !important; }
-
-/* ===== Kleine Zeitleiste ohne Text ===== */
-#timebar {
-  position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: 12px;
-  width: min(520px, 60vw);
-  height: 10px;
-  border-radius: 999px;
-  background: rgba(10,18,14,.55);
-  border: 1px solid rgba(53,88,70,.6);
-  overflow: hidden;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.05), 0 8px 24px rgba(0,0,0,.25);
-  z-index: 1200;
-}
-#timebar .fill {
-  height: 100%;
-  width: 100%;
-  background: #41c77d; /* ändert sich per JS zu Gelb/Rot */
-  transition: width .12s linear, background-color .2s linear;
-}
-/* Falls ein Label aus älteren Builds noch existiert: verstecken */
-#timebar .label { display: none !important; }
-
-/* HUD oben mittig */
-#roundHud {
-  position: absolute;
-  top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 20px;
-  font-size: 20px;
-  font-weight: bold;
-  color: #fff;
-  text-shadow: 1px 1px 2px #000;
-}
-
-/* Overlays (Zwischenrunde + Final) */
-.overlay {
-  position: fixed;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  background: rgba(0,0,0,0.7);
-  display: flex;
+.round-modal__btn {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  z-index: 2000;
-}
-
-.overlay.hidden {
-  display: none;
-}
-
-.overlay-content {
-  background: #fff;
-  padding: 30px;
-  border-radius: 15px;
-  text-align: center;
-  max-width: 400px;
-  width: 80%;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.4);
-}
-
-.overlay-content h2 {
-  margin-bottom: 15px;
-}
-
-.overlay-content button {
-  margin-top: 20px;
-  padding: 10px 20px;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #22c55e;
+  color: #111;
+  font-weight: 800;
   border: none;
-  border-radius: 8px;
-  background: #3b5d3c;
-  color: white;
-  font-size: 16px;
   cursor: pointer;
-  transition: background 0.2s;
 }
+.round-modal__btn:active { transform: translateY(1px); }
 
-.overlay-content button:hover {
-  background: #2c4630;
-}
+/* Utility */
+.hidden { display: none !important; }
