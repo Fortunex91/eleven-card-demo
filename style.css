@@ -368,3 +368,63 @@ html, body {
 }
 /* Falls ein Label aus älteren Builds noch existiert: verstecken */
 #timebar .label { display: none !important; }
+
+/* HUD oben mittig */
+#roundHud {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 20px;
+  font-size: 20px;
+  font-weight: bold;
+  color: #fff;
+  text-shadow: 1px 1px 2px #000;
+}
+
+/* Overlays (Zwischenrunde + Final) */
+.overlay {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.overlay.hidden {
+  display: none;
+}
+
+.overlay-content {
+  background: #fff;
+  padding: 30px;
+  border-radius: 15px;
+  text-align: center;
+  max-width: 400px;
+  width: 80%;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+}
+
+.overlay-content h2 {
+  margin-bottom: 15px;
+}
+
+.overlay-content button {
+  margin-top: 20px;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  background: #3b5d3c;
+  color: white;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.overlay-content button:hover {
+  background: #2c4630;
+}
